@@ -1,0 +1,314 @@
+import * as THREE from 'three';
+import { audioDsp } from './audioDsp';
+
+export interface ControllerOptions {
+  camera: THREE.PerspectiveCamera;
+  characterGroup: THREE.Group;
+  domElement: HTMLElement;
+  initialPosition?: THREE.Vector3;
+  walkSpeed?: number;
+  runSpeed?: number;
+  jumpPower?: number;
+}
+
+export class ThirdPersonController {
+  public camera: THREE.PerspectiveCamera;
+  public characterGroup: THREE.Group;
+  public domElement: HTMLElement;
+
+  // Spherical orbit angles
+  public distance = 5.4;
+  public targetDistance = 5.4;
+  public minDistance = 1.6;
+  public maxDistance = 14.0;
+
+  public yaw = 0;          // Horizontal orbit angle (radians)
+  public targetYaw = 0;
+  public pitch = 0.28;     // Vertical elevation angle (radians)
+  public targetPitch = 0.28;
+  public minPitch = -0.22;
+  public maxPitch = 1.25;
+
+  // Camera look target
+  public currentTarget = new THREE.Vector3(0, 1.4, 0);
+
+  // Player physics state
+  public position = new THREE.Vector3(0, 0, 0);
+  public velocity = new THREE.Vector3();
+  public currentHeading = 0;
+  public targetHeading = 0;
+  public isJumping = false;
+  public jumpVelocity = 0;
+
+  // Tuning speeds
+  public walkSpeed = 4.6;
+  public runSpeed = 8.6;
+  public jumpPower = 7.5;
+  public acceleration = 18.0;
+  public friction = 14.0;
+  public turnSpeed = 14.0;
+
+  // Input states
+  public keys: Record<string, boolean> = {};
+  public isOrbiting = false;
+  public lastMousePos = { x: 0, y: 0 };
+
+  // Mode override (e.g. Inspect Close-Up or Top-Down Drone)
+  public activeMode: 'gtaFollow' | 'perspective' | 'isometric' | 'topDown' | 'closeUp' = 'gtaFollow';
+
+  private boundOnKeyDown: (e: KeyboardEvent) => void;
+  private boundOnKeyUp: (e: KeyboardEvent) => void;
+  private boundOnMouseDown: (e: MouseEvent) => void;
+  private boundOnMouseMove: (e: MouseEvent) => void;
+  private boundOnMouseUp: (e: MouseEvent) => void;
+  private boundOnWheel: (e: WheelEvent) => void;
+  private boundOnContextMenu: (e: MouseEvent) => void;
+
+  constructor(opts: ControllerOptions) {
+    this.camera = opts.camera;
+    this.characterGroup = opts.characterGroup;
+    this.domElement = opts.domElement;
+
+    if (opts.initialPosition) {
+      this.position.copy(opts.initialPosition);
+      this.characterGroup.position.copy(this.position);
+      this.currentTarget.set(this.position.x, this.position.y + 1.4, this.position.z);
+    }
+    if (opts.walkSpeed) this.walkSpeed = opts.walkSpeed;
+    if (opts.runSpeed) this.runSpeed = opts.runSpeed;
+    if (opts.jumpPower) this.jumpPower = opts.jumpPower;
+
+    // Bind event handlers
+    this.boundOnKeyDown = this.onKeyDown.bind(this);
+    this.boundOnKeyUp = this.onKeyUp.bind(this);
+    this.boundOnMouseDown = this.onMouseDown.bind(this);
+    this.boundOnMouseMove = this.onMouseMove.bind(this);
+    this.boundOnMouseUp = this.onMouseUp.bind(this);
+    this.boundOnWheel = this.onWheel.bind(this);
+    this.boundOnContextMenu = (e: MouseEvent) => e.preventDefault();
+
+    window.addEventListener('keydown', this.boundOnKeyDown);
+    window.addEventListener('keyup', this.boundOnKeyUp);
+    this.domElement.addEventListener('mousedown', this.boundOnMouseDown);
+    window.addEventListener('mousemove', this.boundOnMouseMove);
+    window.addEventListener('mouseup', this.boundOnMouseUp);
+    this.domElement.addEventListener('wheel', this.boundOnWheel, { passive: false });
+    this.domElement.addEventListener('contextmenu', this.boundOnContextMenu);
+  }
+
+  public setMode(mode: 'gtaFollow' | 'perspective' | 'isometric' | 'topDown' | 'closeUp') {
+    this.activeMode = mode;
+    if (mode === 'closeUp') {
+      this.targetDistance = 2.4;
+      this.targetPitch = 0.15;
+    } else if (mode === 'gtaFollow') {
+      this.targetDistance = 5.4;
+      this.targetPitch = 0.28;
+    } else if (mode === 'topDown') {
+      this.targetDistance = 18.0;
+      this.targetPitch = 1.25;
+    } else if (mode === 'isometric') {
+      this.targetDistance = 12.0;
+      this.targetPitch = 0.65;
+      this.targetYaw = Math.PI / 4;
+    } else if (mode === 'perspective') {
+      this.targetDistance = 4.2;
+      this.targetPitch = 0.08;
+    }
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    // Avoid capturing inputs if user is typing in chat inputs or forms
+    const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+    if (targetTag === 'input' || targetTag === 'textarea') return;
+
+    const key = e.key.toLowerCase();
+    this.keys[key] = true;
+
+    // Jump handling
+    if (e.code === 'Space' && !this.isJumping) {
+      this.isJumping = true;
+      this.jumpVelocity = this.jumpPower;
+      audioDsp.playQuantumBurst();
+    }
+  }
+
+  private onKeyUp(e: KeyboardEvent) {
+    const key = e.key.toLowerCase();
+    this.keys[key] = false;
+  }
+
+  private onMouseDown(e: MouseEvent) {
+    // Left click (0) or Right click (2) starts camera orbit
+    if (e.button === 0 || e.button === 2) {
+      this.isOrbiting = true;
+      this.lastMousePos = { x: e.clientX, y: e.clientY };
+    }
+  }
+
+  private onMouseMove(e: MouseEvent) {
+    if (!this.isOrbiting) return;
+
+    const deltaX = e.clientX - this.lastMousePos.x;
+    const deltaY = e.clientY - this.lastMousePos.y;
+    this.lastMousePos = { x: e.clientX, y: e.clientY };
+
+    const sensitivity = 0.0055;
+    this.targetYaw -= deltaX * sensitivity;
+    this.targetPitch += deltaY * sensitivity;
+
+    // Clamp pitch so camera doesn't flip upside down
+    this.targetPitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.targetPitch));
+  }
+
+  private onMouseUp() {
+    this.isOrbiting = false;
+  }
+
+  private onWheel(e: WheelEvent) {
+    e.preventDefault();
+    const zoomSpeed = 0.0035;
+    this.targetDistance += e.deltaY * zoomSpeed;
+    this.targetDistance = Math.max(this.minDistance, Math.min(this.maxDistance, this.targetDistance));
+  }
+
+  /**
+   * Main 60FPS update loop: Camera-relative movement, smooth rotation, and camera tracking.
+   */
+  public update(delta: number, speedMultiplier: number = 1.0): {
+    isMoving: boolean;
+    isRunning: boolean;
+    isJumping: boolean;
+    heading: number;
+    speed: number;
+  } {
+    const dt = Math.min(delta, 0.1);
+
+    // 1. Gather directional input (WASD & Arrow Keys)
+    let inputForward = 0;
+    let inputRight = 0;
+
+    if (this.keys['w'] || this.keys['arrowup']) inputForward += 1;
+    if (this.keys['s'] || this.keys['arrowdown']) inputForward -= 1;
+    if (this.keys['a'] || this.keys['arrowleft']) inputRight -= 1;
+    if (this.keys['d'] || this.keys['arrowright']) inputRight += 1;
+
+    const hasInput = inputForward !== 0 || inputRight !== 0;
+    const isRunning = (this.keys['shift'] || false) && hasInput;
+
+    // 2. Camera-Relative Direction Calculation
+    // Forward direction in horizontal plane based on current camera yaw
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+
+    const moveDirection = new THREE.Vector3();
+    if (hasInput) {
+      moveDirection.addScaledVector(forward, inputForward);
+      moveDirection.addScaledVector(right, inputRight);
+      moveDirection.normalize();
+    }
+
+    // 3. Acceleration & Velocity Damping
+    const baseSpeed = isRunning ? this.runSpeed : this.walkSpeed;
+    const currentMaxSpeed = baseSpeed * speedMultiplier;
+
+    if (hasInput) {
+      const targetVelX = moveDirection.x * currentMaxSpeed;
+      const targetVelZ = moveDirection.z * currentMaxSpeed;
+
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, targetVelX, this.acceleration, dt);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, targetVelZ, this.acceleration, dt);
+
+      // 4. Smooth Character Heading (Faces Movement Direction)
+      this.targetHeading = Math.atan2(this.velocity.x, this.velocity.z);
+    } else {
+      // Natural deceleration via friction
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, 0, this.friction, dt);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, 0, this.friction, dt);
+    }
+
+    // Smooth heading rotation with shortest angle interpolation
+    const diff = (this.targetHeading - this.currentHeading + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+    this.currentHeading += diff * Math.min(1, this.turnSpeed * dt);
+    this.characterGroup.rotation.y = this.currentHeading;
+
+    // Banking/tilt into turns (subtle realistic GTA inertia)
+    const bankTarget = hasInput ? -diff * 0.12 : 0;
+    this.characterGroup.rotation.z = THREE.MathUtils.damp(
+      this.characterGroup.rotation.z,
+      bankTarget,
+      8,
+      dt
+    );
+
+    // 5. Position & Bounds Clamping (Keeps player on Požarevac streets)
+    this.position.x += this.velocity.x * dt;
+    this.position.z += this.velocity.z * dt;
+
+    const terrainBound = 35.0;
+    this.position.x = Math.max(-terrainBound, Math.min(terrainBound, this.position.x));
+    this.position.z = Math.max(-terrainBound, Math.min(terrainBound, this.position.z));
+
+    // 6. Jump Physics & Gravity
+    if (this.isJumping) {
+      this.position.y += this.jumpVelocity * dt;
+      this.jumpVelocity -= 18.5 * dt; // Gravity
+      if (this.position.y <= 0) {
+        this.position.y = 0;
+        this.isJumping = false;
+        this.jumpVelocity = 0;
+      }
+    } else {
+      this.position.y = 0;
+    }
+
+    this.characterGroup.position.copy(this.position);
+
+    // 7. Smooth Third-Person Camera Follow & Orbit
+    // Target focus: Character upper torso (y + 1.35)
+    const targetFocusPoint = new THREE.Vector3(
+      this.position.x,
+      this.position.y + 1.35,
+      this.position.z
+    );
+    this.currentTarget.lerp(targetFocusPoint, 0.14);
+
+    // Interpolate spherical angles and distance
+    this.yaw = THREE.MathUtils.damp(this.yaw, this.targetYaw, 14, dt);
+    this.pitch = THREE.MathUtils.damp(this.pitch, this.targetPitch, 14, dt);
+    this.distance = THREE.MathUtils.damp(this.distance, this.targetDistance, 10, dt);
+
+    // Calculate Camera Position
+    const camX = this.currentTarget.x + Math.sin(this.yaw) * Math.cos(this.pitch) * this.distance;
+    const camY = this.currentTarget.y + Math.sin(this.pitch) * this.distance;
+    const camZ = this.currentTarget.z + Math.cos(this.yaw) * Math.cos(this.pitch) * this.distance;
+
+    this.camera.position.set(camX, camY, camZ);
+    this.camera.lookAt(this.currentTarget);
+
+    // 8. Dynamic FOV Kick during sprint
+    const targetFov = isRunning ? 55 : 50;
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 6, dt);
+    this.camera.updateProjectionMatrix();
+
+    const horizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+
+    return {
+      isMoving: horizontalSpeed > 0.35,
+      isRunning,
+      isJumping: this.isJumping,
+      heading: this.currentHeading,
+      speed: horizontalSpeed,
+    };
+  }
+
+  public dispose() {
+    window.removeEventListener('keydown', this.boundOnKeyDown);
+    window.removeEventListener('keyup', this.boundOnKeyUp);
+    this.domElement.removeEventListener('mousedown', this.boundOnMouseDown);
+    window.removeEventListener('mousemove', this.boundOnMouseMove);
+    window.removeEventListener('mouseup', this.boundOnMouseUp);
+    this.domElement.removeEventListener('wheel', this.boundOnWheel);
+    this.domElement.removeEventListener('contextmenu', this.boundOnContextMenu);
+  }
+}

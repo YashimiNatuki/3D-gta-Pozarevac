@@ -1,0 +1,6 @@
+{
+  "name": "Y!appi 3D Cyber World - AiChatBratina v10.0",
+  "description": "3D interactive cyber world with ground plane, sphere, rotatable cube, real-time Google Search AI intel, Google Drive game saves, and Web Audio DSP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
