@@ -20,127 +20,56 @@ export const THUG_OUTFITS: Record<ThugOutfitId, ThugOutfitConfig> = {
   classic: {
     id: 'classic',
     name: 'Thug Life Klasik (West Coast)',
-    vestColor: 0x18181b, // Jet black leather vest
-    shirtColor: 0xf8fafc, // Crisp white muscle tank
-    pantsColor: 0x1d4ed8, // Classic street blue baggy jeans
-    sneakerPrimary: 0xdc2626, // Red/White high-top kicks
-    sneakerSecondary: 0xffffff,
-    bandanaColor: 0xdc2626, // Iconic Red Bandana
+    vestColor: 0x18181b,
+    shirtColor: 0x27272a, // Rich dark muscle tank, non-glare
+    pantsColor: 0x1e3a8a, // Deep denim blue
+    sneakerPrimary: 0xb91c1c,
+    sneakerSecondary: 0xe2e8f0,
+    bandanaColor: 0xb91c1c,
     hatType: 'bandana',
-    chainColor: 0xf59e0b, // Pure Gold chain
-    auraColor: 0x00f0ff,
+    chainColor: 0xd97706,
+    auraColor: 0x0284c7,
   },
   goldBoss: {
     id: 'goldBoss',
     name: 'Konglomerat Zlatni Don',
-    vestColor: 0xfafafa, // White & Gold boss jacket
-    shirtColor: 0xf59e0b, // Gold silk jersey
-    pantsColor: 0x0f172a, // Obsidian tailored street pants
-    sneakerPrimary: 0xf59e0b, // Gold luxury sneakers
-    sneakerSecondary: 0xffffff,
-    bandanaColor: 0xf59e0b, // Gold boss headband
+    vestColor: 0x1e293b,
+    shirtColor: 0xb45309,
+    pantsColor: 0x0f172a,
+    sneakerPrimary: 0xd97706,
+    sneakerSecondary: 0xf1f5f9,
+    bandanaColor: 0xd97706,
     hatType: 'snapback',
-    chainColor: 0xffd700, // Diamond-cut Gold chain
-    auraColor: 0xffd700,
+    chainColor: 0xf59e0b,
+    auraColor: 0xeab308,
   },
   cyber2077: {
     id: 'cyber2077',
     name: 'Cyberpunk Požarevac 2077',
     vestColor: 0x09090b,
-    shirtColor: 0x06b6d4, // Glowing cyan undershirt
-    pantsColor: 0x18181b, // Cyber cargo pants
-    sneakerPrimary: 0x06b6d4, // Cyan glow runners
-    sneakerSecondary: 0xa855f7,
-    bandanaColor: 0x06b6d4, // Cyber visor headband
+    shirtColor: 0x0e7490,
+    pantsColor: 0x18181b,
+    sneakerPrimary: 0x06b6d4,
+    sneakerSecondary: 0x64748b,
+    bandanaColor: 0x0891b2,
     hatType: 'beanie',
-    chainColor: 0x00ffff, // Platinum cyber chain
-    auraColor: 0x00ff88,
+    chainColor: 0x06b6d4,
+    auraColor: 0x06b6d4,
   },
   redHood: {
     id: 'redHood',
     name: 'Požarevac Red Hood Boss',
-    vestColor: 0x991b1b, // Deep crimson street hoodie
-    shirtColor: 0x18181b, // Black graphic tee
-    pantsColor: 0x334155, // Charcoal baggy denim
-    sneakerPrimary: 0xef4444, // Red kicks
-    sneakerSecondary: 0x000000,
-    bandanaColor: 0x18181b, // Black stealth bandana
+    vestColor: 0x7f1d1d,
+    shirtColor: 0x18181b,
+    pantsColor: 0x334155,
+    sneakerPrimary: 0x991b1b,
+    sneakerSecondary: 0x1e293b,
+    bandanaColor: 0x18181b,
     hatType: 'snapback',
-    chainColor: 0xf59e0b,
-    auraColor: 0xef4444,
+    chainColor: 0xd97706,
+    auraColor: 0xdc2626,
   },
 };
-
-/**
- * Creates a dynamic overhead billboard sprite with player title, level, health & respect.
- */
-function createPlayerTagSprite(name: string, level: number): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 160;
-  const ctx = canvas.getContext('2d');
-
-  if (ctx) {
-    // Background pill container
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.beginPath();
-    ctx.roundRect(16, 16, 480, 128, 28);
-    ctx.fill();
-
-    // Border glowing neon
-    ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 6;
-    ctx.stroke();
-
-    // Player Title with Crown
-    ctx.font = 'bold 36px monospace';
-    ctx.fillStyle = '#ffd700';
-    ctx.textAlign = 'center';
-    ctx.fillText(`👑 ${name.toUpperCase()} 👑`, 256, 64);
-
-    // Sub-stats (Level & Thug Life badge)
-    ctx.font = 'bold 26px sans-serif';
-    ctx.fillStyle = '#4ade80';
-    ctx.fillText(`LVL ${level} • RESPEKT 99% • HP 100`, 256, 110);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-  const sprite = new THREE.Sprite(spriteMat);
-  sprite.scale.set(3.2, 1.0, 1.0);
-  sprite.position.y = 2.85;
-  return sprite;
-}
-
-/**
- * Creates tattoo sleeve canvas texture for muscular arms.
- */
-function createTattooTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = '#e8b28f'; // Skin base
-    ctx.fillRect(0, 0, 256, 256);
-
-    // Tribal / Thug Life tattoo linework
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 4;
-    for (let i = 0; i < 18; i++) {
-      ctx.beginPath();
-      ctx.arc(40 + (i % 4) * 55, 30 + Math.floor(i / 4) * 45, 18, 0, Math.PI * 1.5);
-      ctx.stroke();
-    }
-    ctx.font = 'bold 22px sans-serif';
-    ctx.fillStyle = '#1e293b';
-    ctx.fillText('THUG', 70, 120);
-    ctx.fillText('LIFE', 70, 160);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  return texture;
-}
 
 export interface CustomCharacterConfig {
   skinColor?: number;
@@ -160,8 +89,12 @@ export interface CharacterRig {
   headGroup: THREE.Group;
   leftLegGroup: THREE.Group;
   rightLegGroup: THREE.Group;
+  leftShinGroup: THREE.Group;
+  rightShinGroup: THREE.Group;
   leftArmGroup: THREE.Group;
   rightArmGroup: THREE.Group;
+  leftForearmGroup: THREE.Group;
+  rightForearmGroup: THREE.Group;
   leftSneaker: THREE.Mesh;
   rightSneaker: THREE.Mesh;
   chainMedallion: THREE.Mesh;
@@ -175,7 +108,45 @@ export interface CharacterRig {
 }
 
 /**
- * Builds the complete high-fidelity 3D GTA Thug Life Character ("AiChatBratina v10.0").
+ * Creates subtle overhead player label without blinding white glare
+ */
+function createPlayerTagSprite(name: string, level: number): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 120;
+  const ctx = canvas.getContext('2d');
+
+  if (ctx) {
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+    ctx.beginPath();
+    ctx.roundRect(12, 12, 488, 96, 20);
+    ctx.fill();
+
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.font = 'bold 30px monospace';
+    ctx.fillStyle = '#fde047';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${name.toUpperCase()}`, 256, 52);
+
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#4ade80';
+    ctx.fillText(`LVL ${level} • RESPEKT 99%`, 256, 88);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.9 });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(2.4, 0.6, 1.0);
+  sprite.position.y = 2.45;
+  return sprite;
+}
+
+/**
+ * Builds the complete high-fidelity 3D GTA Character with anatomical multi-joint skeleton.
  */
 export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): CharacterRig {
   const rootGroup = new THREE.Group();
@@ -183,439 +154,392 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
 
   const cfg = THUG_OUTFITS[initialOutfit];
 
-  // Skin Material
+  // Natural skin tone, calibrated roughness
   const skinMat = new THREE.MeshStandardMaterial({
-    color: 0xf2b992,
-    roughness: 0.55,
-    metalness: 0.1,
+    color: 0xdf9b77,
+    roughness: 0.65,
+    metalness: 0.05,
   });
 
-  // Tattoo Sleeve Material
-  const tattooTex = createTattooTexture();
-  const tattooMat = new THREE.MeshStandardMaterial({
-    map: tattooTex,
-    roughness: 0.6,
-  });
-
-  // Dynamic Outfit Materials
   const vestMat = new THREE.MeshStandardMaterial({
     color: cfg.vestColor,
-    roughness: 0.35,
-    metalness: 0.35,
+    roughness: 0.6,
+    metalness: 0.15,
   });
 
   const shirtMat = new THREE.MeshStandardMaterial({
     color: cfg.shirtColor,
-    roughness: 0.7,
+    roughness: 0.8,
   });
 
   const pantsMat = new THREE.MeshStandardMaterial({
     color: cfg.pantsColor,
-    roughness: 0.75,
+    roughness: 0.85,
   });
 
   const sneakerMat = new THREE.MeshStandardMaterial({
     color: cfg.sneakerPrimary,
-    roughness: 0.3,
-    metalness: 0.2,
+    roughness: 0.4,
+    metalness: 0.1,
   });
 
   const sneakerWhiteMat = new THREE.MeshStandardMaterial({
     color: cfg.sneakerSecondary,
-    roughness: 0.2,
+    roughness: 0.4,
   });
 
   const bandanaMat = new THREE.MeshStandardMaterial({
     color: cfg.bandanaColor,
-    roughness: 0.6,
+    roughness: 0.7,
   });
 
   const goldMat = new THREE.MeshStandardMaterial({
     color: cfg.chainColor,
-    roughness: 0.15,
-    metalness: 0.95,
+    roughness: 0.25,
+    metalness: 0.85,
   });
 
   const shadesMat = new THREE.MeshStandardMaterial({
     color: 0x09090b,
-    roughness: 0.05,
-    metalness: 0.9,
+    roughness: 0.1,
+    metalness: 0.8,
   });
 
-  // 1. DEDICATED CHARACTER HERO LIGHT (Ensures the player always pops out brightly)
-  const heroLight = new THREE.PointLight(0xfff1dc, 3.2, 12, 1.2);
-  heroLight.position.set(0, 2.6, 1.2);
+  // Soft, subtle character illumination (NO whiteout glare)
+  const heroLight = new THREE.PointLight(0xfff7ed, 0.45, 6, 1.0);
+  heroLight.position.set(0, 2.2, 0.8);
   rootGroup.add(heroLight);
 
-  // 2. TORSO & CHEST
+  // 1. TORSO & CHEST
   const torsoGroup = new THREE.Group();
-  torsoGroup.position.y = 1.25;
+  torsoGroup.position.y = 1.15;
   rootGroup.add(torsoGroup);
 
-  // Inner Muscle Tank / Jersey
-  const tankGeo = new THREE.BoxGeometry(0.72, 0.88, 0.44);
-  const tankMesh = new THREE.Mesh(tankGeo, shirtMat);
-  tankMesh.position.y = 0;
-  tankMesh.castShadow = true;
-  torsoGroup.add(tankMesh);
+  // Athletic tapered torso
+  const torsoGeo = new THREE.CylinderGeometry(0.32, 0.27, 0.76, 18);
+  torsoGeo.scale(1.0, 1.0, 0.75);
+  const torsoMesh = new THREE.Mesh(torsoGeo, shirtMat);
+  torsoMesh.castShadow = true;
+  torsoGroup.add(torsoMesh);
 
-  // Outer Leather Biker Vest / Hoodie (Open in front to display jersey & gold chain)
-  const vestBackGeo = new THREE.BoxGeometry(0.78, 0.9, 0.12);
+  // Rounded chest definition
+  const chestGeo = new THREE.SphereGeometry(0.16, 14, 14);
+  chestGeo.scale(1.0, 0.85, 0.6);
+  const leftPec = new THREE.Mesh(chestGeo, shirtMat);
+  leftPec.position.set(-0.14, 0.18, 0.14);
+  const rightPec = new THREE.Mesh(chestGeo, shirtMat);
+  rightPec.position.set(0.14, 0.18, 0.14);
+  torsoGroup.add(leftPec, rightPec);
+
+  // Biker Vest
+  const vestBackGeo = new THREE.CylinderGeometry(0.34, 0.29, 0.78, 18, 1, false, Math.PI / 2, Math.PI);
+  vestBackGeo.scale(1.03, 1.0, 0.78);
   const vestBack = new THREE.Mesh(vestBackGeo, vestMat);
-  vestBack.position.set(0, 0, -0.19);
   vestBack.castShadow = true;
   torsoGroup.add(vestBack);
 
-  const vestLeftGeo = new THREE.BoxGeometry(0.24, 0.9, 0.48);
-  const vestLeft = new THREE.Mesh(vestLeftGeo, vestMat);
-  vestLeft.position.set(-0.28, 0, 0.01);
-  vestLeft.castShadow = true;
-  torsoGroup.add(vestLeft);
+  const vestFlapLeft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.29, 0.78, 14, 1, false, -Math.PI / 5, Math.PI / 2.8),
+    vestMat
+  );
+  vestFlapLeft.position.set(-0.04, 0, 0);
+  const vestFlapRight = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.29, 0.78, 14, 1, false, -Math.PI / 5, Math.PI / 2.8),
+    vestMat
+  );
+  vestFlapRight.position.set(0.04, 0, 0);
+  torsoGroup.add(vestFlapLeft, vestFlapRight);
 
-  const vestRightGeo = new THREE.BoxGeometry(0.24, 0.9, 0.48);
-  const vestRight = new THREE.Mesh(vestRightGeo, vestMat);
-  vestRight.position.set(0.28, 0, 0.01);
-  vestRight.castShadow = true;
-  torsoGroup.add(vestRight);
-
-  // Biker Vest Collar
-  const collarGeo = new THREE.BoxGeometry(0.55, 0.14, 0.35);
-  const collarMesh = new THREE.Mesh(collarGeo, vestMat);
-  collarMesh.position.set(0, 0.46, -0.06);
-  torsoGroup.add(collarMesh);
-
-  // Leather Belt with Gold Buckle
-  const beltGeo = new THREE.BoxGeometry(0.74, 0.12, 0.46);
-  const beltMesh = new THREE.Mesh(beltGeo, new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.4 }));
-  beltMesh.position.set(0, -0.44, 0);
+  // Belt
+  const beltMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.29, 0.29, 0.08, 18),
+    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 })
+  );
+  beltMesh.position.set(0, -0.38, 0);
+  beltMesh.scale.set(1.0, 1.0, 0.75);
   torsoGroup.add(beltMesh);
 
-  const buckleGeo = new THREE.BoxGeometry(0.18, 0.14, 0.06);
-  const buckleMesh = new THREE.Mesh(buckleGeo, goldMat);
-  buckleMesh.position.set(0, -0.44, 0.24);
-  torsoGroup.add(buckleMesh);
-
-  // 3. HEAVY 3D GOLD CUBAN LINK CHAIN & MEDALLION
-  const chainTorusGeo = new THREE.TorusGeometry(0.2, 0.035, 12, 28);
-  const chainMesh = new THREE.Mesh(chainTorusGeo, goldMat);
-  chainMesh.rotation.x = Math.PI / 3;
-  chainMesh.position.set(0, 0.32, 0.18);
+  // Gold chain & medallion
+  const chainMesh = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.025, 10, 24), goldMat);
+  chainMesh.rotation.x = Math.PI / 2.8;
+  chainMesh.position.set(0, 0.26, 0.15);
   torsoGroup.add(chainMesh);
 
-  // 3D Gold Yashime / Kong Dollar Medallion
-  const medallionGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.025, 24);
-  const chainMedallion = new THREE.Mesh(medallionGeo, goldMat);
+  const chainMedallion = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.02, 20), goldMat);
   chainMedallion.rotation.x = Math.PI / 2;
-  chainMedallion.position.set(0, 0.12, 0.25);
+  chainMedallion.position.set(0, 0.1, 0.2);
   chainMedallion.castShadow = true;
   torsoGroup.add(chainMedallion);
 
-  // 4. HEAD & FACE
+  // 2. HEAD & FACE
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 0.65, 0);
+  headGroup.position.set(0, 0.54, 0);
   torsoGroup.add(headGroup);
 
-  // Neck
-  const neckGeo = new THREE.CylinderGeometry(0.16, 0.18, 0.22, 16);
-  const neckMesh = new THREE.Mesh(neckGeo, skinMat);
-  neckMesh.position.set(0, -0.08, 0);
+  const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.18, 14), skinMat);
+  neckMesh.position.set(0, -0.06, 0);
   headGroup.add(neckMesh);
 
-  // Head Box/Skull
-  const headGeo = new THREE.BoxGeometry(0.46, 0.52, 0.46);
+  const headGeo = new THREE.SphereGeometry(0.24, 18, 18);
+  headGeo.scale(0.95, 1.1, 1.0);
   const headMesh = new THREE.Mesh(headGeo, skinMat);
-  headMesh.position.set(0, 0.22, 0);
+  headMesh.position.set(0, 0.2, 0);
   headMesh.castShadow = true;
   headGroup.add(headMesh);
 
-  // Defined Jaw & Ears
-  const leftEar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.1), skinMat);
-  leftEar.position.set(-0.25, 0.22, 0);
-  const rightEar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.1), skinMat);
-  rightEar.position.set(0.25, 0.22, 0);
-  headGroup.add(leftEar, rightEar);
+  // Jaw
+  const jawMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.1, 0.16, 14), skinMat);
+  jawMesh.position.set(0, 0.08, 0.06);
+  headGroup.add(jawMesh);
 
-  // Gangster Sunglasses / Aviators
-  const shadesBridge = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.15), shadesMat);
-  shadesBridge.position.set(0, 0.25, 0.21);
-  const shadesLeftLens = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.06), shadesMat);
-  shadesLeftLens.position.set(-0.12, 0.25, 0.26);
-  const shadesRightLens = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.06), shadesMat);
-  shadesRightLens.position.set(0.12, 0.25, 0.26);
+  // Sunglasses
+  const shadesMesh = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.09, 0.08), shadesMat);
+  shadesMesh.position.set(0, 0.22, 0.22);
+  headGroup.add(shadesMesh);
 
-  // Gold Aviator Frame
-  const shadesFrame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.22), goldMat);
-  shadesFrame.position.set(0, 0.32, 0.2);
-  headGroup.add(shadesBridge, shadesLeftLens, shadesRightLens, shadesFrame);
-
-  // HEADGEAR (Bandana / Snapback / Beanie based on outfit)
-  const bandanaBand = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.14, 0.49), bandanaMat);
-  bandanaBand.position.set(0, 0.42, 0);
+  // Bandana
+  const bandanaBand = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.1, 0.44), bandanaMat);
+  bandanaBand.position.set(0, 0.35, 0);
   headGroup.add(bandanaBand);
 
-  // Bandana Top Cover
-  const bandanaTop = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.48), bandanaMat);
-  bandanaTop.position.set(0, 0.5, 0);
-  headGroup.add(bandanaTop);
-
-  // Bandana Tied Knot at the Back
-  const bandanaKnot = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 8), bandanaMat);
-  bandanaKnot.rotation.x = -Math.PI / 3;
-  bandanaKnot.position.set(0, 0.36, -0.28);
-  headGroup.add(bandanaKnot);
-
-  // Snapback Visor (Pointed backward for maximum 90s Thug Life street style)
-  const snapbackVisor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.04, 0.24), bandanaMat);
-  snapbackVisor.position.set(0, 0.45, -0.32);
-  snapbackVisor.rotation.x = -0.15;
-  headGroup.add(snapbackVisor);
-
-  // 5. 3D FLOATING OVERHEAD CROWN & BILLBOARD
-  const crownGeo = new THREE.ConeGeometry(0.24, 0.28, 5);
-  const overheadCrown = new THREE.Mesh(crownGeo, goldMat);
-  overheadCrown.rotation.x = Math.PI; // Inverted crown
-  overheadCrown.position.set(0, 1.05, 0);
+  // Subtle overhead crown
+  const overheadCrown = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.18, 5), goldMat);
+  overheadCrown.rotation.x = Math.PI;
+  overheadCrown.position.set(0, 0.8, 0);
   headGroup.add(overheadCrown);
 
   let playerTagSprite = createPlayerTagSprite('BRATINA (Yashime)', 1);
   rootGroup.add(playerTagSprite);
 
-  // 6. LEFT ARM RIG
+  // 3. MULTI-JOINT ARMS (Shoulder -> Upper Arm -> Forearm Elbow -> Hand)
+  // LEFT ARM
   const leftArmGroup = new THREE.Group();
-  leftArmGroup.position.set(-0.48, 0.32, 0);
+  leftArmGroup.position.set(-0.4, 0.28, 0);
   torsoGroup.add(leftArmGroup);
 
-  const leftBicep = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.11, 0.42, 12), tattooMat);
-  leftBicep.position.set(0, -0.2, 0);
+  const leftBicep = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.34, 12), skinMat);
+  leftBicep.position.set(0, -0.17, 0);
   leftBicep.castShadow = true;
   leftArmGroup.add(leftBicep);
 
-  const leftForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.38, 12), tattooMat);
-  leftForearm.position.set(0, -0.52, 0.04);
+  // Forearm with elbow joint pivot
+  const leftForearmGroup = new THREE.Group();
+  leftForearmGroup.position.set(0, -0.34, 0);
+  leftArmGroup.add(leftForearmGroup);
+
+  const leftForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.3, 12), skinMat);
+  leftForearm.position.set(0, -0.15, 0.02);
   leftForearm.castShadow = true;
-  leftArmGroup.add(leftForearm);
+  leftForearmGroup.add(leftForearm);
 
-  // Left Fist / Fingerless Glove
   const leftGlove = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.16, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 })
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.6 })
   );
-  leftGlove.position.set(0, -0.74, 0.05);
-  leftArmGroup.add(leftGlove);
+  leftGlove.position.set(0, -0.32, 0.02);
+  leftForearmGroup.add(leftGlove);
 
-  // Gold Watch on Left Wrist
-  const goldWatch = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.06, 16), goldMat);
-  goldWatch.position.set(0, -0.66, 0.05);
-  leftArmGroup.add(goldWatch);
-
-  // 7. RIGHT ARM RIG
+  // RIGHT ARM
   const rightArmGroup = new THREE.Group();
-  rightArmGroup.position.set(0.48, 0.32, 0);
+  rightArmGroup.position.set(0.4, 0.28, 0);
   torsoGroup.add(rightArmGroup);
 
-  const rightBicep = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.11, 0.42, 12), tattooMat);
-  rightBicep.position.set(0, -0.2, 0);
+  const rightBicep = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.34, 12), skinMat);
+  rightBicep.position.set(0, -0.17, 0);
   rightBicep.castShadow = true;
   rightArmGroup.add(rightBicep);
 
-  const rightForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.38, 12), tattooMat);
-  rightForearm.position.set(0, -0.52, 0.04);
+  const rightForearmGroup = new THREE.Group();
+  rightForearmGroup.position.set(0, -0.34, 0);
+  rightArmGroup.add(rightForearmGroup);
+
+  const rightForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.3, 12), skinMat);
+  rightForearm.position.set(0, -0.15, 0.02);
   rightForearm.castShadow = true;
-  rightArmGroup.add(rightForearm);
+  rightForearmGroup.add(rightForearm);
 
-  // Right Fist
   const rightGlove = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.16, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 })
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.6 })
   );
-  rightGlove.position.set(0, -0.74, 0.05);
-  rightArmGroup.add(rightGlove);
+  rightGlove.position.set(0, -0.32, 0.02);
+  rightForearmGroup.add(rightGlove);
 
-  // Gold Ring on Right Hand
-  const goldRing = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.015, 8, 16), goldMat);
-  goldRing.position.set(0.08, -0.74, 0.05);
-  rightArmGroup.add(goldRing);
-
-  // 3D Hand Props
-  // 1. Golden Microphone
+  // Props
   const micGroup = new THREE.Group();
-  const micHandle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.03, 0.025, 0.22, 12),
-    new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.2 })
-  );
-  const micHead = new THREE.Mesh(
-    new THREE.SphereGeometry(0.05, 12, 12),
-    new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.1 })
-  );
-  micHead.position.y = 0.12;
-  micGroup.add(micHandle, micHead);
-  micGroup.position.set(0, -0.76, 0.12);
-  micGroup.rotation.x = Math.PI / 4;
+  const micHead = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 10), goldMat);
+  micGroup.add(micHead);
+  micGroup.position.set(0, -0.36, 0.06);
   micGroup.visible = false;
-  rightArmGroup.add(micGroup);
+  rightForearmGroup.add(micGroup);
 
-  // 2. Graffiti Spray Can
   const sprayGroup = new THREE.Group();
-  const sprayCan = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.045, 0.045, 0.2, 16),
-    new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3 })
-  );
-  const sprayCap = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.02, 0.04, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffffff })
-  );
-  sprayCap.position.y = 0.11;
-  sprayGroup.add(sprayCan, sprayCap);
-  sprayGroup.position.set(0, -0.75, 0.12);
+  const sprayCan = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 12), vestMat);
+  sprayGroup.add(sprayCan);
+  sprayGroup.position.set(0, -0.36, 0.06);
   sprayGroup.visible = false;
-  rightArmGroup.add(sprayGroup);
+  rightForearmGroup.add(sprayGroup);
 
-  // 3. Kong Holographic Smartphone
-  const phoneMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 0.16, 0.015),
-    new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x06b6d4, emissiveIntensity: 0.6 })
-  );
-  phoneMesh.position.set(0, -0.74, 0.12);
+  const phoneMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.01), shadesMat);
+  phoneMesh.position.set(0, -0.36, 0.06);
   phoneMesh.visible = false;
-  rightArmGroup.add(phoneMesh);
+  rightForearmGroup.add(phoneMesh);
 
-  // 8. LEGS & SNEAKERS RIG
-  // Helper to create detailed High-Top Sneaker
-  const createFreshSneaker = (isLeft: boolean) => {
-    const shoeGroup = new THREE.Group();
-
-    // White Rubber Sole
-    const soleGeo = new THREE.BoxGeometry(0.26, 0.09, 0.52);
-    const soleMesh = new THREE.Mesh(soleGeo, sneakerWhiteMat);
-    soleMesh.position.set(0, 0.045, 0.06);
-    soleMesh.castShadow = true;
-    shoeGroup.add(soleMesh);
-
-    // Upper Shoe
-    const upperGeo = new THREE.BoxGeometry(0.24, 0.22, 0.48);
-    const upperMesh = new THREE.Mesh(upperGeo, sneakerMat);
-    upperMesh.position.set(0, 0.18, 0.06);
-    upperMesh.castShadow = true;
-    shoeGroup.add(upperMesh);
-
-    // White Toe Cap
-    const toeGeo = new THREE.BoxGeometry(0.24, 0.14, 0.18);
-    const toeMesh = new THREE.Mesh(toeGeo, sneakerWhiteMat);
-    toeMesh.position.set(0, 0.14, 0.24);
-    shoeGroup.add(toeMesh);
-
-    // High-top Collar / Ankle Support
-    const collarShoeGeo = new THREE.BoxGeometry(0.25, 0.2, 0.26);
-    const collarShoe = new THREE.Mesh(collarShoeGeo, sneakerMat);
-    collarShoe.position.set(0, 0.32, -0.04);
-    shoeGroup.add(collarShoe);
-
-    // Laces
-    const lacesGeo = new THREE.BoxGeometry(0.14, 0.04, 0.22);
-    const lacesMesh = new THREE.Mesh(lacesGeo, sneakerWhiteMat);
-    lacesMesh.position.set(0, 0.26, 0.12);
-    shoeGroup.add(lacesMesh);
-
-    return shoeGroup;
+  // 4. MULTI-JOINT LEGS (Hip Thigh -> Knee Joint Shin -> Foot Sneaker)
+  const createSneaker = () => {
+    const sGroup = new THREE.Group();
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 0.4), sneakerWhiteMat);
+    sole.position.set(0, 0.035, 0.05);
+    sole.castShadow = true;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.36), sneakerMat);
+    body.position.set(0, 0.14, 0.04);
+    body.castShadow = true;
+    sGroup.add(sole, body);
+    return sGroup;
   };
 
-  // LEFT LEG RIG
+  // LEFT LEG
   const leftLegGroup = new THREE.Group();
-  leftLegGroup.position.set(-0.22, 0.75, 0);
+  leftLegGroup.position.set(-0.18, 0.7, 0);
   rootGroup.add(leftLegGroup);
 
-  const leftPants = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.72, 0.32), pantsMat);
-  leftPants.position.set(0, -0.32, 0);
-  leftPants.castShadow = true;
-  leftLegGroup.add(leftPants);
+  const leftThigh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.42, 14), pantsMat);
+  leftThigh.position.set(0, -0.21, 0);
+  leftThigh.castShadow = true;
+  leftLegGroup.add(leftThigh);
 
-  const leftSneakerGroup = createFreshSneaker(true);
-  leftSneakerGroup.position.set(0, -0.74, 0);
-  leftLegGroup.add(leftSneakerGroup);
+  const leftShinGroup = new THREE.Group();
+  leftShinGroup.position.set(0, -0.42, 0);
+  leftLegGroup.add(leftShinGroup);
 
-  // RIGHT LEG RIG
+  const leftShin = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.4, 14), pantsMat);
+  leftShin.position.set(0, -0.2, 0);
+  leftShin.castShadow = true;
+  leftShinGroup.add(leftShin);
+
+  const leftSneakerGroup = createSneaker();
+  leftSneakerGroup.position.set(0, -0.42, 0);
+  leftShinGroup.add(leftSneakerGroup);
+
+  // RIGHT LEG
   const rightLegGroup = new THREE.Group();
-  rightLegGroup.position.set(0.22, 0.75, 0);
+  rightLegGroup.position.set(0.18, 0.7, 0);
   rootGroup.add(rightLegGroup);
 
-  const rightPants = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.72, 0.32), pantsMat);
-  rightPants.position.set(0, -0.32, 0);
-  rightPants.castShadow = true;
-  rightLegGroup.add(rightPants);
+  const rightThigh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.42, 14), pantsMat);
+  rightThigh.position.set(0, -0.21, 0);
+  rightThigh.castShadow = true;
+  rightLegGroup.add(rightThigh);
 
-  const rightSneakerGroup = createFreshSneaker(false);
-  rightSneakerGroup.position.set(0, -0.74, 0);
-  rightLegGroup.add(rightSneakerGroup);
+  const rightShinGroup = new THREE.Group();
+  rightShinGroup.position.set(0, -0.42, 0);
+  rightLegGroup.add(rightShinGroup);
 
-  // 9. DUAL-RING ROTATING PULSE AURA UNDER FEET
-  const auraGeo = new THREE.RingGeometry(0.75, 0.95, 32);
+  const rightShin = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.4, 14), pantsMat);
+  rightShin.position.set(0, -0.2, 0);
+  rightShin.castShadow = true;
+  rightShinGroup.add(rightShin);
+
+  const rightSneakerGroup = createSneaker();
+  rightSneakerGroup.position.set(0, -0.42, 0);
+  rightShinGroup.add(rightSneakerGroup);
+
+  // Subdued Ground Aura Ring (No blinding neon)
+  const auraGeo = new THREE.RingGeometry(0.65, 0.8, 28);
   const auraMat = new THREE.MeshBasicMaterial({
     color: cfg.auraColor,
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.35,
   });
   const playerAuraRing = new THREE.Mesh(auraGeo, auraMat);
   playerAuraRing.rotation.x = -Math.PI / 2;
-  playerAuraRing.position.y = 0.04;
+  playerAuraRing.position.y = 0.02;
   rootGroup.add(playerAuraRing);
 
-  // Internal Animation Clock
+  // 5. SYNCHRONIZED CHOREOGRAPHY & BIPEDAL ANIMATION ENGINE
   let animClock = 0;
 
   const updateAnimation = (delta: number, isMoving: boolean, isRunning: boolean, isJumping: boolean) => {
-    animClock += delta * (isRunning ? 13 : isMoving ? 8 : 2.5);
+    const speedMultiplier = isRunning ? 11.5 : isMoving ? 7.2 : 2.0;
+    animClock += delta * speedMultiplier;
 
-    // Crown floating & rotating
-    overheadCrown.rotation.y += delta * 2;
-    overheadCrown.position.y = 1.05 + Math.sin(animClock * 1.5) * 0.08;
-
-    // Ground aura rotation
-    playerAuraRing.rotation.z += delta * 1.5;
-
-    // Medallion swing
-    chainMedallion.rotation.z = Math.sin(animClock * 1.2) * 0.15;
+    // Subtle crown & aura rotation
+    overheadCrown.rotation.y += delta * 1.5;
+    playerAuraRing.rotation.z += delta * 0.8;
 
     if (isJumping) {
-      // Jump Pose: Legs tucked, arms flared up
-      leftLegGroup.rotation.x = THREE.MathUtils.lerp(leftLegGroup.rotation.x, -0.6, 0.2);
-      rightLegGroup.rotation.x = THREE.MathUtils.lerp(rightLegGroup.rotation.x, -0.6, 0.2);
-      leftArmGroup.rotation.x = THREE.MathUtils.lerp(leftArmGroup.rotation.x, -1.2, 0.2);
-      rightArmGroup.rotation.x = THREE.MathUtils.lerp(rightArmGroup.rotation.x, -1.2, 0.2);
-      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, -0.15, 0.1);
+      // Jump Pose: Thighs flexed forward, knees tucked, arms flared up
+      leftLegGroup.rotation.x = THREE.MathUtils.lerp(leftLegGroup.rotation.x, -0.7, 0.2);
+      rightLegGroup.rotation.x = THREE.MathUtils.lerp(rightLegGroup.rotation.x, -0.5, 0.2);
+      leftShinGroup.rotation.x = THREE.MathUtils.lerp(leftShinGroup.rotation.x, 0.9, 0.2);
+      rightShinGroup.rotation.x = THREE.MathUtils.lerp(rightShinGroup.rotation.x, 0.8, 0.2);
+
+      leftArmGroup.rotation.x = THREE.MathUtils.lerp(leftArmGroup.rotation.x, -1.1, 0.2);
+      rightArmGroup.rotation.x = THREE.MathUtils.lerp(rightArmGroup.rotation.x, -1.1, 0.2);
+      leftForearmGroup.rotation.x = THREE.MathUtils.lerp(leftForearmGroup.rotation.x, 0.6, 0.2);
+      rightForearmGroup.rotation.x = THREE.MathUtils.lerp(rightForearmGroup.rotation.x, 0.6, 0.2);
+
+      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, -0.1, 0.15);
+      torsoGroup.rotation.y = THREE.MathUtils.lerp(torsoGroup.rotation.y, 0, 0.15);
+      torsoGroup.position.y = 1.15;
     } else if (isMoving) {
-      // Walk / Sprint Cycle
-      const legAmplitude = isRunning ? 0.75 : 0.52;
-      const armAmplitude = isRunning ? 0.85 : 0.55;
+      // Bipedal Locomotion Cycle
+      const stride = Math.sin(animClock);
+      const strideCos = Math.cos(animClock);
+      const legAmp = isRunning ? 0.75 : 0.48;
+      const armAmp = isRunning ? 0.72 : 0.44;
 
-      const cycle = Math.sin(animClock);
-      leftLegGroup.rotation.x = cycle * legAmplitude;
-      rightLegGroup.rotation.x = -cycle * legAmplitude;
+      // Hips swing in opposition
+      leftLegGroup.rotation.x = stride * legAmp;
+      rightLegGroup.rotation.x = -stride * legAmp;
 
-      leftArmGroup.rotation.x = -cycle * armAmplitude;
-      rightArmGroup.rotation.x = cycle * armAmplitude;
+      // Natural Knee Flexion: Knees bend during the swing-back phase
+      // Left knee bends when left leg swings back
+      leftShinGroup.rotation.x = Math.max(0, -stride * (isRunning ? 0.95 : 0.65));
+      // Right knee bends when right leg swings back
+      rightShinGroup.rotation.x = Math.max(0, stride * (isRunning ? 0.95 : 0.65));
 
-      // Sprint forward lean
-      const forwardLean = isRunning ? 0.28 : 0.1;
-      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, forwardLean, 0.15);
+      // Synchronized Arms: Opposite arm swings forward with leg!
+      leftArmGroup.rotation.x = -stride * armAmp;
+      rightArmGroup.rotation.x = stride * armAmp;
 
-      // Torso vertical bounce
-      torsoGroup.position.y = 1.25 + Math.abs(Math.sin(animClock)) * (isRunning ? 0.1 : 0.05);
+      // Natural Elbow Flexion: Forearms stay slightly flexed, flexing more on forward swing
+      leftForearmGroup.rotation.x = 0.35 + Math.max(0, stride * 0.4);
+      rightForearmGroup.rotation.x = 0.35 + Math.max(0, -stride * 0.4);
+
+      // Spine Counter-Rotation (Pelvis vs Torso Yaw Twist)
+      torsoGroup.rotation.y = -stride * (isRunning ? 0.14 : 0.08);
+
+      // Forward lean during run
+      const lean = isRunning ? 0.22 : 0.08;
+      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, lean, 0.15);
+
+      // Vertical Bounce: 2 dips and peaks per gait cycle
+      const bounce = Math.abs(strideCos) * (isRunning ? 0.08 : 0.04);
+      torsoGroup.position.y = 1.15 + bounce;
+
+      // Head remains focused forward
+      headGroup.rotation.y = stride * 0.06;
     } else {
-      // Idle Breathing & Stance
-      leftLegGroup.rotation.x = THREE.MathUtils.lerp(leftLegGroup.rotation.x, 0, 0.15);
-      rightLegGroup.rotation.x = THREE.MathUtils.lerp(rightLegGroup.rotation.x, 0, 0.15);
-      leftArmGroup.rotation.x = THREE.MathUtils.lerp(leftArmGroup.rotation.x, 0, 0.15);
-      rightArmGroup.rotation.x = THREE.MathUtils.lerp(rightArmGroup.rotation.x, 0, 0.15);
+      // Natural Idle Breathing Stance
+      leftLegGroup.rotation.x = THREE.MathUtils.lerp(leftLegGroup.rotation.x, 0.04, 0.1);
+      rightLegGroup.rotation.x = THREE.MathUtils.lerp(rightLegGroup.rotation.x, -0.04, 0.1);
+      leftShinGroup.rotation.x = THREE.MathUtils.lerp(leftShinGroup.rotation.x, 0, 0.1);
+      rightShinGroup.rotation.x = THREE.MathUtils.lerp(rightShinGroup.rotation.x, 0, 0.1);
 
-      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, 0, 0.15);
-      // Subtle idle breathing
-      torsoGroup.position.y = 1.25 + Math.sin(animClock) * 0.02;
-      torsoGroup.scale.set(
-        1 + Math.sin(animClock) * 0.015,
-        1,
-        1 + Math.sin(animClock) * 0.015
-      );
+      // Relaxed arms at sides with slight elbow bend
+      leftArmGroup.rotation.x = THREE.MathUtils.lerp(leftArmGroup.rotation.x, 0.06, 0.1);
+      rightArmGroup.rotation.x = THREE.MathUtils.lerp(rightArmGroup.rotation.x, 0.06, 0.1);
+      leftForearmGroup.rotation.x = THREE.MathUtils.lerp(leftForearmGroup.rotation.x, 0.22, 0.1);
+      rightForearmGroup.rotation.x = THREE.MathUtils.lerp(rightForearmGroup.rotation.x, 0.22, 0.1);
+
+      torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, 0, 0.1);
+      torsoGroup.rotation.y = THREE.MathUtils.lerp(torsoGroup.rotation.y, 0, 0.1);
+      headGroup.rotation.y = THREE.MathUtils.lerp(headGroup.rotation.y, 0, 0.1);
+
+      // Subtle breathing motion
+      torsoGroup.position.y = 1.15 + Math.sin(animClock) * 0.015;
     }
   };
 
@@ -660,8 +584,12 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
     headGroup,
     leftLegGroup,
     rightLegGroup,
+    leftShinGroup,
+    rightShinGroup,
     leftArmGroup,
     rightArmGroup,
+    leftForearmGroup,
+    rightForearmGroup,
     leftSneaker: leftSneakerGroup.children[0] as THREE.Mesh,
     rightSneaker: rightSneakerGroup.children[0] as THREE.Mesh,
     chainMedallion,

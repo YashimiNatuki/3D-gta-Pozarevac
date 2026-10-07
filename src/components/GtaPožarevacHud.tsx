@@ -24,18 +24,41 @@ import {
   Sun,
   CloudRain,
   CloudFog,
+  Smartphone,
+  ShoppingBag,
+  Sprout,
+  Moon,
+  AlertOctagon,
+  Star,
+  Activity,
+  Layers,
+  Swords,
+  ChevronDown,
+  ChevronUp,
+  Video,
+  FileText,
+  Globe,
+  FolderOpen,
+  FileCode,
 } from 'lucide-react';
 import { CharacterStats, Quest } from '../services/characterProgress';
 import { audioDsp } from '../services/audioDsp';
 import { POŽAREVAC_POIS, PožarevacPoi } from '../services/pozaravacPoi';
 import { ThugOutfitId, THUG_OUTFITS } from '../services/characterModel';
-import { WeatherState } from '../services/weatherSystem';
+import { WeatherState } from '../services/weatherManager';
+import { PožarevacMiniMap } from './PožarevacMiniMap';
+import { DynamicMission, TurfZone } from '../services/dynamicMissionEngine';
+import { TimeOfDay } from '../services/streetEconomy';
+import { PožarevacNewsTicker } from './PožarevacNewsTicker';
+import { RadioStationWidget } from './RadioStationWidget';
 
 export interface GtaPožarevacHudProps {
   stats: CharacterStats;
   onUpgradeStat: (type: 'speed' | 'jump' | 'stamina') => void;
   playerPos: { x: number; z: number; heading: number };
   quests: Quest[];
+  dynamicMissions?: DynamicMission[];
+  turfZones?: TurfZone[];
   nearPoi?: PožarevacPoi | null;
   onInteractWithPoi?: (poi: PožarevacPoi) => void;
   outfit: ThugOutfitId;
@@ -44,9 +67,21 @@ export interface GtaPožarevacHudProps {
   onSelectCameraMode: (m: 'gtaFollow' | 'perspective' | 'isometric' | 'topDown' | 'closeUp') => void;
   weather: WeatherState;
   onWeatherChange: (w: WeatherState) => void;
+  timeOfDay: TimeOfDay;
+  onSelectTimeOfDay: (t: TimeOfDay) => void;
   isAudioPlaying: boolean;
   onToggleAudio: () => void;
   onOpenCreator?: () => void;
+  onOpenPhone?: () => void;
+  onOpenMarket?: () => void;
+  onOpenFarm?: () => void;
+  onOpenTurfWar?: () => void;
+  onOpenGoogleDocs?: () => void;
+  onOpenGoogleMaps?: () => void;
+  onOpenGooglePicker?: () => void;
+  onOpenMasterPlan?: () => void;
+  isCctvActive?: boolean;
+  onToggleCctv?: () => void;
 }
 
 export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
@@ -54,6 +89,8 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
   onUpgradeStat,
   playerPos,
   quests,
+  dynamicMissions = [],
+  turfZones = [],
   nearPoi,
   onInteractWithPoi,
   outfit,
@@ -62,15 +99,54 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
   onSelectCameraMode,
   weather,
   onWeatherChange,
+  timeOfDay,
+  onSelectTimeOfDay,
   isAudioPlaying,
   onToggleAudio,
   onOpenCreator,
+  onOpenPhone,
+  onOpenMarket,
+  onOpenFarm,
+  onOpenTurfWar,
+  onOpenGoogleDocs,
+  onOpenGoogleMaps,
+  onOpenGooglePicker,
+  onOpenMasterPlan,
+  isCctvActive = false,
+  onToggleCctv,
 }) => {
-  // Prozor minimize stanja (Odvojeni, nezavisni prozori!)
+  // Prozor minimize / expand stanja (Puna kontrola veličine i vidljivosti prozora!)
   const [minimizedCharacter, setMinimizedCharacter] = useState(false);
   const [minimizedRadar, setMinimizedRadar] = useState(false);
+  const [radarSize, setRadarSize] = useState<'normal' | 'expanded'>('normal');
   const [minimizedQuests, setMinimizedQuests] = useState(false);
   const [minimizedCamWeather, setMinimizedCamWeather] = useState(false);
+  const [minimizedControls, setMinimizedControls] = useState(false);
+
+  // Prozor vidljivost toggle - Podrazumevano ČIST POGLED (Clean HUD View)
+  const [visibleWindows, setVisibleWindows] = useState({
+    character: false,
+    camera: false,
+    radar: false,
+    quests: false,
+    controls: false,
+    radio: false,
+  });
+
+  const toggleWindow = (win: 'character' | 'camera' | 'radar' | 'quests' | 'controls' | 'radio') => {
+    setVisibleWindows((prev) => {
+      const isOpening = !prev[win];
+      if (isOpening) {
+        // Pametno sprečavanje preklapanja: zatvori prozor na istoj strani ako je ekran manji
+        if (win === 'character') return { ...prev, character: true, radar: false };
+        if (win === 'radar') return { ...prev, radar: true, character: false };
+        if (win === 'camera') return { ...prev, camera: true, quests: false };
+        if (win === 'quests') return { ...prev, quests: true, camera: false };
+      }
+      return { ...prev, [win]: isOpening };
+    });
+    audioDsp.playRotateTick();
+  };
 
   // Modal za nadogradnju osobina
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -88,6 +164,8 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
     if (absZ < 3.5 && absX < 25) return 'VOJE DULIĆA / KORZO';
     if (playerPos.x < -6 && playerPos.z > 4) return 'GRADSKI PARK POŽAREVAC';
     if (playerPos.x > 8 && playerPos.z > 6) return 'ČAČALICA ŠUMSKI PUT';
+    if (playerPos.x > 18 && playerPos.z < -8) return 'HIPODROM ŠUMADIJSKA';
+    if (playerPos.x < -14 && playerPos.z < -10) return 'BUVLJAK KOD PRUGE';
     return 'CENTAR POŽAREVCA';
   };
 
@@ -97,527 +175,865 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
     );
   };
 
+  const wantedLevel = stats.wantedLevel || 0;
+
   return (
     <>
       {/* ========================================================= */}
+      {/* 🚨 POLICE PURSUIT FULLSCREEN VIGNETTE & WARNING EFFECT    */}
+      {/* ========================================================= */}
+      {wantedLevel > 0 && (
+        <div className="pointer-events-none fixed inset-0 z-30 transition-all duration-300">
+          {/* Flashing screen edge pursuit glow (Alternating Red and Blue) */}
+          <div className="absolute inset-0 border-[6px] sm:border-[10px] border-rose-600/70 animate-pulse shadow-[inset_0_0_80px_rgba(225,29,72,0.45)]" />
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-blue-600 to-red-600 animate-ping opacity-75" />
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* ⭐ WANTED LEVEL & STREET THUG STARS (Centar Gore)         */}
+      {/* ========================================================= */}
+      <div className="pointer-events-auto absolute top-16 left-1/2 -translate-x-1/2 z-30 font-mono select-none flex flex-col items-center">
+        {/* Wanted Stars ⭐ */}
+        <div className="bg-slate-900/90 backdrop-blur-xl px-4 py-1.5 rounded-full border border-slate-700/80 shadow-2xl flex items-center gap-1.5">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">
+            WANTED:
+          </span>
+          {[1, 2, 3, 4, 5].map((starIdx) => {
+            const isWanted = starIdx <= wantedLevel;
+            return (
+              <Star
+                key={starIdx}
+                className={`w-4 h-4 transition-all duration-300 ${
+                  isWanted
+                    ? 'text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-bounce'
+                    : 'text-slate-600 fill-slate-800'
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        {/* Siren Warning if Wanted > 0 */}
+        {wantedLevel > 0 && (
+          <div className="mt-1 px-3.5 py-1 rounded-full bg-rose-600 text-white font-black text-[11px] animate-pulse flex items-center gap-1.5 border-2 border-rose-300 shadow-xl">
+            <AlertOctagon className="w-3.5 h-3.5 text-white animate-spin" />
+            <span>MURIJA NA REPU: BEŽI U GRADSKI PARK ILI ČAČALICU! 🚓💨</span>
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================= */}
+      {/* QUICK WINDOW DOCKING BAR (Centar Gore, ispod Topbara)    */}
+      {/* ========================================================= */}
+      <div className="pointer-events-auto absolute top-14 sm:top-16 left-1/2 -translate-x-1/2 z-30 font-mono select-none flex flex-wrap justify-center items-center gap-1 bg-slate-950/90 backdrop-blur-2xl px-2.5 py-1 rounded-full border border-slate-700/80 shadow-2xl text-[10px] max-w-[95vw]">
+        <button
+          onClick={() => {
+            setVisibleWindows({
+              character: false,
+              camera: false,
+              radar: false,
+              quests: false,
+              controls: false,
+              radio: false,
+            });
+            audioDsp.playRotateTick();
+          }}
+          className={`px-2.5 py-0.5 rounded-full font-black transition cursor-pointer ${
+            !Object.values(visibleWindows).some(Boolean)
+              ? 'bg-amber-400 text-slate-950 shadow-md'
+              : 'text-amber-300 bg-amber-950/60 border border-amber-500/40 hover:bg-amber-500 hover:text-slate-950'
+          }`}
+          title="Očisti ekran za pun 3D prikaz Požarevca (Clean View)"
+        >
+          🧹 ČIST POGLED
+        </button>
+
+        <button
+          onClick={() => toggleWindow('character')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+            visibleWindows.character
+              ? 'bg-emerald-500 text-slate-950 font-black shadow-md'
+              : 'text-emerald-400 bg-slate-900 border border-slate-800 hover:border-emerald-500/50'
+          }`}
+          title="Prikaži/sakrij prozor Lika"
+        >
+          👤 LIK
+        </button>
+
+        <button
+          onClick={() => toggleWindow('camera')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+            visibleWindows.camera
+              ? 'bg-cyan-500 text-slate-950 font-black shadow-md'
+              : 'text-cyan-400 bg-slate-900 border border-slate-800 hover:border-cyan-500/50'
+          }`}
+          title="Prikaži/sakrij prozor Kamere & Vremena"
+        >
+          📷 KAMERA
+        </button>
+
+        <button
+          onClick={() => toggleWindow('radar')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+            visibleWindows.radar
+              ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+              : 'text-amber-400 bg-slate-900 border border-slate-800 hover:border-amber-500/50'
+          }`}
+          title="Prikaži/sakrij GPS Mini-Mapu"
+        >
+          🗺️ RADAR
+        </button>
+
+        <button
+          onClick={() => toggleWindow('quests')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+            visibleWindows.quests
+              ? 'bg-purple-500 text-slate-950 font-black shadow-md'
+              : 'text-purple-400 bg-slate-900 border border-slate-800 hover:border-purple-500/50'
+          }`}
+          title="Prikaži/sakrij Ulične Zadatke"
+        >
+          📜 ZADACI
+        </button>
+
+        <button
+          onClick={() => toggleWindow('controls')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer hidden md:inline-flex ${
+            visibleWindows.controls
+              ? 'bg-blue-500 text-slate-950 font-black shadow-md'
+              : 'text-blue-400 bg-slate-900 border border-slate-800 hover:border-blue-500/50'
+          }`}
+          title="Prikaži/sakrij WASD Kontrole"
+        >
+          🎮 KONTROLE
+        </button>
+
+        <button
+          onClick={() => toggleWindow('radio')}
+          className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+            visibleWindows.radio
+              ? 'bg-rose-500 text-slate-950 font-black shadow-md'
+              : 'text-rose-400 bg-slate-900 border border-slate-800 hover:border-rose-500/50'
+          }`}
+          title="Prikaži/sakrij Radio Stanicu i Spektrogram"
+        >
+          📻 RADIO
+        </button>
+
+        {onToggleCctv && (
+          <button
+            onClick={() => {
+              onToggleCctv();
+              audioDsp.playRotateTick();
+            }}
+            className={`px-2 py-0.5 rounded-full font-black transition cursor-pointer ${
+              isCctvActive
+                ? 'bg-rose-600 text-white font-black shadow-md animate-pulse'
+                : 'text-emerald-400 bg-emerald-950/60 border border-emerald-500/40'
+            }`}
+            title="Aktiviraj CCTV Hakovan Gradski Nadzor"
+          >
+            📹 CCTV
+          </button>
+        )}
+      </div>
+
+      {/* ========================================================= */}
+      {/* CENTRALNA DOCK TRAKA: RESPONSIVNA, KOMPAKTNA, BEZ SCROLLBARA */}
+      {/* ========================================================= */}
+      <div className="pointer-events-auto absolute bottom-10 left-1/2 -translate-x-1/2 z-30 font-mono select-none flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 bg-slate-900/95 backdrop-blur-2xl px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl border border-slate-700/80 shadow-2xl max-w-[96vw]">
+        {onOpenPhone && (
+          <button
+            onClick={() => {
+              onOpenPhone();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-cyan-500/20 shrink-0"
+            title="Otvori Bratina OS Telefon (SMS & Dojave)"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">TELEFON</span>
+          </button>
+        )}
+
+        {onOpenFarm && (
+          <button
+            onClick={() => {
+              onOpenFarm();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-emerald-500/20 shrink-0"
+            title="Botanička Plantaža (Sadnja & Žetva)"
+          >
+            <Sprout className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">PLANTAŽA</span>
+          </button>
+        )}
+
+        {onOpenMarket && (
+          <button
+            onClick={() => {
+              onOpenMarket();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-amber-500/20 shrink-0"
+            title="Ulični Buvljak & Preprodaja"
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">BUVLJAK</span>
+          </button>
+        )}
+
+        {onOpenTurfWar && (
+          <button
+            onClick={() => {
+              onOpenTurfWar();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-rose-600/20 shrink-0"
+            title="Rat za Reone (Teritorije Požarevca)"
+          >
+            <Swords className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">REONI</span>
+          </button>
+        )}
+
+        {onOpenGoogleMaps && (
+          <button
+            onClick={() => {
+              onOpenGoogleMaps();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-teal-600/20 shrink-0"
+            title="Google Maps GPS satelit Požarevca"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">MAPS</span>
+          </button>
+        )}
+
+        {onOpenGoogleDocs && (
+          <button
+            onClick={() => {
+              onOpenGoogleDocs();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-blue-600/20 shrink-0"
+            title="Kreiraj Google Docs izveštaj Požarevca"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">DOCS</span>
+          </button>
+        )}
+
+        {onOpenGooglePicker && (
+          <button
+            onClick={() => {
+              onOpenGooglePicker();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-purple-600/20 shrink-0"
+            title="Otvori Google Picker (Bratina Drive Trezor)"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">PICKER</span>
+          </button>
+        )}
+
+        {onOpenMasterPlan && (
+          <button
+            onClick={() => {
+              onOpenMasterPlan();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-amber-500/20 shrink-0"
+            title="XP Master Codex v10.0: Masivni plan sa 10 algoritama"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">XP PLAN</span>
+          </button>
+        )}
+
+        {/* Doba Dana Kompaktna Dugmad */}
+        <div className="h-4 w-px bg-slate-700 mx-0.5 shrink-0 hidden sm:block" />
+        <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+          {(['dawn', 'day', 'dusk', 'night'] as TimeOfDay[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => {
+                onSelectTimeOfDay(t);
+                audioDsp.playRotateTick();
+              }}
+              className={`p-1 rounded-lg text-[10px] transition cursor-pointer ${
+                timeOfDay === t
+                  ? 'bg-amber-400 text-slate-950 font-black shadow'
+                  : 'text-slate-400 hover:text-white bg-slate-800/80'
+              }`}
+              title={`Promeni doba dana na: ${t}`}
+            >
+              {t === 'dawn' ? '🌅' : t === 'day' ? '☀️' : t === 'dusk' ? '🌇' : '🌙'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ========================================================= */}
       {/* PROZOR 1: 👤 3D LIK, GARDEROBA & STATSI (Gore Levo)      */}
       {/* ========================================================= */}
-      <div className="pointer-events-auto absolute top-18 left-4 z-20 font-mono select-none">
-        <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-emerald-500/60 rounded-2xl shadow-2xl text-slate-100 w-[290px] overflow-hidden transition-all duration-300">
-          {/* Header Prozora */}
-          <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-950 px-3.5 py-2.5 border-b border-emerald-500/30 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-xs font-black text-emerald-400 tracking-wider">
-                THUG LIK #1
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="px-2 py-0.5 rounded-md bg-emerald-950 border border-emerald-400 text-[10px] text-emerald-300 font-black">
-                LVL {stats.level}
-              </span>
-              <button
-                onClick={() => setMinimizedCharacter(!minimizedCharacter)}
-                className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition"
-                title={minimizedCharacter ? 'Proširi' : 'Umanji'}
-              >
-                {minimizedCharacter ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-              </button>
-            </div>
-          </div>
-
-          {!minimizedCharacter && (
-            <div className="p-3.5 space-y-3 text-[11px]">
-              {/* Čin i Rang */}
-              <div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase">TITULA:</div>
-                <div className="text-sm font-black text-white flex items-center gap-1.5">
-                  <Flame className="w-4 h-4 text-amber-400" />
-                  <span>{stats.rankTitle}</span>
-                </div>
-              </div>
-
-              {/* Zdravlje (HP) & Respekt */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-[10px]">
-                  <span className="text-rose-400 font-bold">ZDRAVLJE (HP):</span>
-                  <span className="font-black text-white">{stats.health}/{stats.maxHealth}</span>
-                </div>
-                <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
-                  <div
-                    className="bg-gradient-to-r from-rose-600 to-rose-400 h-full transition-all duration-300"
-                    style={{ width: `${(stats.health / stats.maxHealth) * 100}%` }}
-                  />
-                </div>
-
-                <div className="flex justify-between text-[10px] pt-1">
-                  <span className="text-cyan-400 font-bold">RESPEKT NA ULICI:</span>
-                  <span className="font-black text-cyan-300">{stats.respect}%</span>
-                </div>
-                <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
-                  <div
-                    className="bg-gradient-to-r from-cyan-500 via-emerald-400 to-amber-400 h-full transition-all duration-300"
-                    style={{ width: `${stats.respect}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Keš Stash */}
-              <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800">
-                <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <DollarSign className="w-3.5 h-3.5 text-amber-400" /> KEŠ U ŠTEKU:
+      {visibleWindows.character && (
+        <div className="pointer-events-auto absolute top-18 left-4 z-20 font-mono select-none">
+          <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-emerald-500/60 rounded-2xl shadow-2xl text-slate-100 w-[290px] overflow-hidden transition-all duration-300">
+            {/* Header Prozora */}
+            <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-950 px-3.5 py-2.5 border-b border-emerald-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs font-black text-emerald-400 tracking-wider">
+                  THUG LIK #1
                 </span>
-                <span className="font-black text-amber-300 text-sm">${stats.cash.toLocaleString()}</span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 text-[10px] font-black transition cursor-pointer"
+                  title="Nadogradi osobine"
+                >
+                  UPGRADE
+                </button>
+                <button
+                  onClick={() => setMinimizedCharacter(!minimizedCharacter)}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer"
+                  title={minimizedCharacter ? 'Proširi' : 'Umanji'}
+                >
+                  {minimizedCharacter ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => setVisibleWindows((v) => ({ ...v, character: false }))}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-xs font-bold"
+                  title="Zatvori prozor"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
 
-              {/* GARDEROBA: Izbor 3D Outfita za Lika */}
-              <div className="pt-1 border-t border-slate-800">
-                <div className="text-[10px] font-bold text-slate-300 mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Shirt className="w-3.5 h-3.5 text-cyan-400" /> OUTFIT LIKA:
-                  </span>
-                  <span className="text-[9px] text-emerald-400 uppercase font-black">
-                    {THUG_OUTFITS[outfit].name.split(' ')[0]}
-                  </span>
+            {/* Telo Prozora */}
+            {!minimizedCharacter && (
+              <div className="p-3.5 space-y-3 text-[11px]">
+                {/* Rang i Nivo */}
+                <div className="flex items-center justify-between bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-bold">STATUS & RANG</div>
+                    <div className="font-black text-emerald-400 text-xs">{stats.rankTitle}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-400 font-bold">NIVO</div>
+                    <div className="font-black text-amber-400 text-base leading-none">LVL {stats.level}</div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(Object.keys(THUG_OUTFITS) as ThugOutfitId[]).map((key) => {
-                    const o = THUG_OUTFITS[key];
-                    const isSelected = outfit === key;
-                    return (
+
+                {/* Valuta i Poeni */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="text-[9px] text-slate-400 font-bold">THUG KEŠ</div>
+                      <div className="font-black text-emerald-400 text-xs">${stats.cash.toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-rose-400 shrink-0" />
+                    <div>
+                      <div className="text-[9px] text-slate-400 font-bold">RESPECT</div>
+                      <div className="font-black text-rose-400 text-xs">{stats.respect} PTS</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Odelo / Outfit Selector */}
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold mb-1.5 flex items-center justify-between">
+                    <span>GARDEROBA:</span>
+                    <span className="text-[9px] text-emerald-400">{THUG_OUTFITS[outfit]?.name}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(Object.keys(THUG_OUTFITS) as ThugOutfitId[]).map((oId) => (
                       <button
-                        key={key}
+                        key={oId}
                         onClick={() => {
-                          onSelectOutfit(key);
+                          onSelectOutfit(oId);
                           audioDsp.playRotateTick();
                         }}
-                        className={`p-1.5 rounded-xl border text-[10px] font-bold text-left transition flex items-center gap-1.5 cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-950/90 border-emerald-400 text-white ring-1 ring-emerald-400'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        className={`py-1.5 px-2 rounded-xl border text-[10px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          outfit === oId
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-sm'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
                         }`}
                       >
-                        <span
-                          className="w-3 h-3 rounded-full shrink-0 border border-white/50"
-                          style={{ backgroundColor: `#${o.sneakerPrimary.toString(16).padStart(6, '0')}` }}
-                        />
-                        <span className="truncate">{o.name.split(' ')[0]}</span>
+                        <Shirt className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{THUG_OUTFITS[oId].name}</span>
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* Dugmad: Kreiraj Lika & Nabudži Osobine */}
-              <div className="space-y-1.5 pt-1">
+                {/* Dugme za Custom Character Creator */}
                 {onOpenCreator && (
                   <button
-                    onClick={() => {
-                      onOpenCreator();
-                      audioDsp.playRotateTick();
-                    }}
-                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
+                    onClick={onOpenCreator}
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white font-black text-[11px] transition shadow-md shadow-emerald-600/30 cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <Shirt className="w-3.5 h-3.5" />
-                    <span>🎨 KREIRAJ / PRILAGODI LIKA</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>PODESI IZGLED LIKA (CREATOR)</span>
                   </button>
                 )}
-
-                <button
-                  onClick={() => {
-                    setShowUpgradeModal(true);
-                    audioDsp.playRotateTick();
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>NABUDŽI OSOBINE LIKA</span>
-                </button>
               </div>
-
-              {/* Uputstvo za Smooth Third-Person Controller */}
-              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[9px] text-slate-400 space-y-0.5">
-                <div className="text-emerald-400 font-bold">🎮 KONTROLE (THIRD-PERSON):</div>
-                <div>• <span className="text-white font-bold">WASD:</span> Kretanje u pravcu kamere</div>
-                <div>• <span className="text-white font-bold">SHIFT:</span> Ulični sprint</div>
-                <div>• <span className="text-white font-bold">SPACE:</span> Skok sa gravitacijom</div>
-                <div>• <span className="text-white font-bold">Miš Levi/Desni:</span> Uglađeno rotiranje kamere</div>
-                <div>• <span className="text-white font-bold">Točkić:</span> Zumiranje lika (Zoom In/Out)</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ========================================================= */}
-      {/* PROZOR 2: 🎥 3D KAMERA & VREME (Gore Desno)              */}
-      {/* ========================================================= */}
-      <div className="pointer-events-auto absolute top-18 right-4 z-20 font-mono select-none">
-        <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-cyan-500/60 rounded-2xl shadow-2xl text-slate-100 w-[290px] overflow-hidden transition-all duration-300">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-cyan-950/80 via-slate-900 to-slate-950 px-3.5 py-2.5 border-b border-cyan-500/30 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Camera className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-xs font-black text-cyan-400 tracking-wider">
-                KAMERA & OKRUŽENJE
-              </span>
-            </div>
-            <button
-              onClick={() => setMinimizedCamWeather(!minimizedCamWeather)}
-              className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition"
-              title={minimizedCamWeather ? 'Proširi' : 'Umanji'}
-            >
-              {minimizedCamWeather ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-            </button>
+            )}
           </div>
+        </div>
+      )}
 
-          {!minimizedCamWeather && (
-            <div className="p-3.5 space-y-3 text-[11px]">
-              {/* Izbor Režima Kamere */}
-              <div>
-                <div className="text-[10px] text-slate-400 font-bold mb-1.5">REŽIM 3D KAMERE:</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    onClick={() => {
-                      onSelectCameraMode('closeUp');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 ${
-                      cameraMode === 'closeUp'
-                        ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md shadow-amber-500/30 font-black'
-                        : 'bg-slate-950/70 border-slate-800 text-amber-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>ZOOM NA LIKA</span>
-                  </button>
+      {/* ========================================================= */}
+      {/* PROZOR: 📻 RADIO STANICA & SPEKTROGRAM                    */}
+      {/* ========================================================= */}
+      {visibleWindows.radio && (
+        <div className="pointer-events-auto absolute top-28 left-1/2 -translate-x-1/2 z-20 font-mono select-none">
+          <RadioStationWidget
+            isAudioPlaying={isAudioPlaying}
+            onToggleAudio={onToggleAudio}
+          />
+        </div>
+      )}
 
-                  <button
-                    onClick={() => {
-                      onSelectCameraMode('gtaFollow');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 ${
-                      cameraMode === 'gtaFollow'
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md shadow-emerald-500/30'
-                        : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>GTA LEĐA</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onSelectCameraMode('perspective');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 ${
-                      cameraMode === 'perspective'
-                        ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/30'
-                        : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>ULIČNI NIVO</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onSelectCameraMode('topDown');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 ${
-                      cameraMode === 'topDown'
-                        ? 'bg-purple-500 text-slate-950 border-purple-300 shadow-md shadow-purple-500/30'
-                        : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>DRON AERIAL</span>
-                  </button>
-                </div>
+      {/* ========================================================= */}
+      {/* PROZOR 2: 📷 KAMERA & VREME (Gore Desno)                   */}
+      {/* ========================================================= */}
+      {visibleWindows.camera && (
+        <div className="pointer-events-auto absolute top-18 right-4 z-20 font-mono select-none">
+          <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-cyan-500/60 rounded-2xl shadow-2xl text-slate-100 w-[290px] overflow-hidden transition-all duration-300">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-cyan-950/80 via-slate-900 to-slate-950 px-3.5 py-2.5 border-b border-cyan-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-xs font-black text-cyan-400 tracking-wider">
+                  KAMERA & OKRUŽENJE
+                </span>
               </div>
-
-              {/* Vreme u Požarevcu */}
-              <div className="pt-2 border-t border-slate-800">
-                <div className="text-[10px] text-slate-400 font-bold mb-1.5">VREME (POŽAREVAC):</div>
-                <div className="grid grid-cols-3 gap-1">
-                  <button
-                    onClick={() => {
-                      onWeatherChange('Clear');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-1.5 px-1 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                      weather === 'Clear'
-                        ? 'bg-amber-500 text-slate-950 shadow-md'
-                        : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Sun className="w-3 h-3" /> Sunčano
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onWeatherChange('Rain');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-1.5 px-1 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                      weather === 'Rain'
-                        ? 'bg-blue-600 text-white shadow-md'
-                        : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <CloudRain className="w-3 h-3" /> Kiša
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onWeatherChange('Cyber-Fog');
-                      audioDsp.playRotateTick();
-                    }}
-                    className={`py-1.5 px-1 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                      weather === 'Cyber-Fog'
-                        ? 'bg-cyan-600 text-white shadow-md'
-                        : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <CloudFog className="w-3 h-3" /> Magla
-                  </button>
-                </div>
-              </div>
-
-              {/* 145 BPM Audio Dugme */}
-              <div className="pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={onToggleAudio}
-                  className={`w-full py-2 px-3 rounded-xl border text-xs font-black transition flex items-center justify-center gap-2 ${
-                    isAudioPlaying
-                      ? 'bg-gradient-to-r from-pink-600/40 to-purple-600/40 border-pink-500 text-pink-300 shadow-lg shadow-pink-500/20'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                  onClick={() => setMinimizedCamWeather(!minimizedCamWeather)}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer"
+                  title={minimizedCamWeather ? 'Proširi' : 'Umanji'}
                 >
-                  {isAudioPlaying ? (
-                    <>
-                      <Volume2 className="w-4 h-4 text-pink-400 animate-bounce" />
-                      <span>145 BPM PSY-TRANCE [SVIRA]</span>
-                    </>
-                  ) : (
-                    <>
-                      <VolumeX className="w-4 h-4 text-slate-500" />
-                      <span>POKRENI 145 BPM MUZIKU</span>
-                    </>
-                  )}
+                  {minimizedCamWeather ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => setVisibleWindows((v) => ({ ...v, camera: false }))}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-xs font-bold"
+                  title="Zatvori prozor"
+                >
+                  ✕
                 </button>
               </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* ========================================================= */}
-      {/* PROZOR 3: 🗺️ POŽAREVAC GPS RADAR (Dole Levo)             */}
-      {/* ========================================================= */}
-      <div className="pointer-events-auto absolute bottom-4 left-4 z-20 font-mono select-none">
-        <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-emerald-500/60 rounded-2xl shadow-2xl overflow-hidden p-3 w-[210px]">
-          {/* Naslov Radara sa Minimize */}
-          <div className="flex items-center justify-between pb-1.5 border-b border-emerald-500/20 mb-2">
-            <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1">
-              <Radio className="w-3 h-3 animate-pulse text-emerald-400" /> GPS RADAR POŽAREVAC
-            </span>
-            <button
-              onClick={() => setMinimizedRadar(!minimizedRadar)}
-              className="text-slate-400 hover:text-white"
-            >
-              {minimizedRadar ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-            </button>
-          </div>
-
-          {!minimizedRadar && (
-            <>
-              {/* Okrugli Radar Ekran */}
-              <div className="relative w-36 h-36 mx-auto rounded-full bg-slate-950 border-2 border-emerald-500/80 shadow-inner overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(0,255,136,0.18)_0%,_transparent_72%)]" />
-                <div className="absolute inset-x-0 top-1/2 h-px bg-emerald-500/30" />
-                <div className="absolute inset-y-0 left-1/2 w-px bg-emerald-500/30" />
-                <div className="absolute inset-4 rounded-full border border-emerald-500/25" />
-
-                {/* Igrač na radaru */}
-                <div
-                  className="absolute top-1/2 left-1/2 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/40 shadow-lg"
-                  style={{ transform: `translate(-50%, -50%) rotate(${playerPos.heading}rad)` }}
-                >
-                  <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[7px] border-b-white mx-auto -mt-1.5" />
-                </div>
-
-                {/* POI tačke Požarevca na radaru */}
-                {POŽAREVAC_POIS.map((poi) => {
-                  const px = 18 + (poi.coords.x - playerPos.x) * 2.8 + 50;
-                  const pz = 18 + (poi.coords.z - playerPos.z) * 2.8 + 50;
-                  const poiColor =
-                    poi.category === 'park'
-                      ? '#22c55e'
-                      : poi.category === 'commercial'
-                      ? '#06b6d4'
-                      : poi.category === 'hq'
-                      ? '#a855f7'
-                      : '#eab308';
-                  return (
-                    <div
-                      key={poi.id}
-                      className="absolute w-2.5 h-2.5 rounded-full border border-white shadow-md transform -translate-x-1/2 -translate-y-1/2"
-                      style={{
-                        left: `${Math.max(6, Math.min(90, px))}%`,
-                        top: `${Math.max(6, Math.min(90, pz))}%`,
-                        backgroundColor: poiColor,
+            {!minimizedCamWeather && (
+              <div className="p-3.5 space-y-3 text-[11px]">
+                {/* Izbor Režima Kamere */}
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold mb-1.5">REŽIM 3D KAMERE:</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => {
+                        onSelectCameraMode('closeUp');
+                        audioDsp.playRotateTick();
                       }}
-                      title={poi.name}
-                    />
-                  );
-                })}
+                      className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraMode === 'closeUp'
+                          ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md shadow-amber-500/30 font-black'
+                          : 'bg-slate-950/70 border-slate-800 text-amber-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>ZOOM NA LIKA</span>
+                    </button>
 
-                <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[9px] font-black text-cyan-400">
-                  N
+                    <button
+                      onClick={() => {
+                        onSelectCameraMode('gtaFollow');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraMode === 'gtaFollow'
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md shadow-emerald-500/30'
+                          : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>GTA LEĐA</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onSelectCameraMode('perspective');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraMode === 'perspective'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/30'
+                          : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>ULIČNI NIVO</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onSelectCameraMode('topDown');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-2 px-2 rounded-xl border text-[10px] font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraMode === 'topDown'
+                          ? 'bg-purple-500 text-slate-950 border-purple-300 shadow-md shadow-purple-500/30'
+                          : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>DRON AERIAL</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Vreme u Požarevcu */}
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-bold mb-1.5 flex items-center justify-between">
+                    <span>VREME (POŽAREVAC):</span>
+                    <span className="text-[9px] text-cyan-400 font-black">AUTOMATSKA TRANZICIJA</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => {
+                        onWeatherChange('Clear');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                        weather === 'Clear'
+                          ? 'bg-amber-500 text-slate-950 shadow-md'
+                          : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Sun className="w-3 h-3 text-amber-400" /> Sunčano
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onWeatherChange('Rain');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                        weather === 'Rain'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <CloudRain className="w-3 h-3 text-blue-300" /> Kiša
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onWeatherChange('Cyber-Storm');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                        weather === 'Cyber-Storm'
+                          ? 'bg-purple-600 text-white shadow-md'
+                          : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Zap className="w-3 h-3 text-yellow-300" /> Cyber-Oluja
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onWeatherChange('Cyber-Fog');
+                        audioDsp.playRotateTick();
+                      }}
+                      className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                        weather === 'Cyber-Fog'
+                          ? 'bg-slate-600 text-white shadow-md'
+                          : 'bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <CloudFog className="w-3 h-3 text-slate-300" /> Magla
+                    </button>
+                  </div>
+                </div>
+
+                {/* Audio 145BPM Beats Toggle */}
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="text-[10px] text-slate-300 font-bold">145 BPM MUZIKA</span>
+                  </div>
+                  <button
+                    onClick={onToggleAudio}
+                    className={`px-3 py-1 rounded-xl text-[10px] font-black transition flex items-center gap-1 cursor-pointer ${
+                      isAudioPlaying
+                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isAudioPlaying ? (
+                      <>
+                        <Volume2 className="w-3 h-3" /> UKLJUČENO
+                      </>
+                    ) : (
+                      <>
+                        <VolumeX className="w-3 h-3" /> ISKLJUČENO
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
-
-              {/* Ulica & Koordinate */}
-              <div className="mt-2 text-center">
-                <div className="text-[10px] font-black text-emerald-400 truncate">
-                  {getCurrentStreetName()}
-                </div>
-                <div className="text-[9px] text-slate-400">
-                  {latDisplay}°N, {lonDisplay}°E
-                </div>
-              </div>
-
-              {/* Interakcija [E] Dugme kada je igrač blizu POI tačke */}
-              {nearPoi && (
-                <button
-                  onClick={() => {
-                    if (onInteractWithPoi) onInteractWithPoi(nearPoi);
-                  }}
-                  className="mt-2 w-full py-1.5 px-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] animate-pulse shadow-lg flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <span>[E] POKRENI ZADATAK</span>
-                </button>
-              )}
-            </>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ========================================================= */}
-      {/* PROZOR 4: 🎯 ULIČNE MISIJE & KONTROLE (Dole Desno)        */}
+      {/* PROZOR 3: 🗺️ POŽAREVAC GPS RADAR (Dole Levo)               */}
       {/* ========================================================= */}
-      <div className="pointer-events-auto absolute bottom-4 right-4 z-20 font-mono select-none flex items-end gap-3">
-        {/* Misije Box */}
-        <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-cyan-500/60 rounded-2xl p-3 shadow-2xl text-slate-200 w-[260px] overflow-hidden">
-          <div className="flex items-center justify-between pb-1.5 border-b border-cyan-500/20 text-xs mb-2">
-            <span className="font-black text-cyan-400 flex items-center gap-1 text-[11px]">
-              <Crosshair className="w-3.5 h-3.5 text-cyan-400" /> ULIČNE MISIJE
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-500/40 text-[9px] text-cyan-300 font-bold">
-                {quests.filter((q) => q.completed).length}/{quests.length}
-              </span>
+      {visibleWindows.radar && (
+        <div className="pointer-events-auto absolute bottom-22 left-4 z-20 font-mono select-none">
+          <div
+            className={`bg-slate-900/95 backdrop-blur-2xl border-2 border-amber-500/60 rounded-2xl shadow-2xl text-slate-100 overflow-hidden transition-all duration-300 ${
+              radarSize === 'expanded' ? 'w-[360px]' : 'w-[260px]'
+            }`}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-950/80 via-slate-900 to-slate-950 px-3 py-2 border-b border-amber-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-[11px] font-black text-amber-400 tracking-wider">
+                  GPS RADAR POŽAREVAC
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setRadarSize((s) => (s === 'normal' ? 'expanded' : 'normal'))}
+                  className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-[10px] cursor-pointer"
+                  title={radarSize === 'normal' ? 'Uvećaj radar' : 'Smanji radar'}
+                >
+                  {radarSize === 'normal' ? '➕' : '➖'}
+                </button>
+                <button
+                  onClick={() => setMinimizedRadar(!minimizedRadar)}
+                  className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer"
+                  title={minimizedRadar ? 'Proširi' : 'Umanji'}
+                >
+                  {minimizedRadar ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => setVisibleWindows((v) => ({ ...v, radar: false }))}
+                  className="w-5 h-5 rounded bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-[10px] font-bold"
+                  title="Zatvori radar"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {!minimizedRadar && (
+              <div className="p-2.5">
+                {/* 2D GPS Radar Komponenta */}
+                <div className="flex justify-center mb-2">
+                  <PožarevacMiniMap
+                    playerPos={playerPos}
+                    pois={POŽAREVAC_POIS}
+                    activeMission={quests.find((q) => !q.completed)}
+                    turfZones={turfZones}
+                  />
+                </div>
+
+                {/* Lokacija i Ulica */}
+                <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 text-[10px]">
+                  <div className="text-slate-400 font-bold">TRENUTNA ULICA / ZONA:</div>
+                  <div className="font-black text-amber-400 truncate">{getCurrentStreetName()}</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">
+                    GPS: {latDisplay}° N, {lonDisplay}° E (X:{playerPos.x.toFixed(1)}, Z:{playerPos.z.toFixed(1)})
+                  </div>
+                </div>
+
+                {/* Proximity POI Interaction Dugme */}
+                {nearPoi && onInteractWithPoi && (
+                  <button
+                    onClick={() => {
+                      onInteractWithPoi(nearPoi);
+                      audioDsp.playHarvestChime();
+                    }}
+                    className="w-full mt-2 py-1.5 px-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-[10px] transition shadow-md shadow-amber-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>{nearPoi.icon}</span>
+                    <span>HAKUJ / PREUZMI: {nearPoi.name.toUpperCase()}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* PROZOR 4: 📜 ULIČNI ZADACI & MISIJE (Dole Desno)           */}
+      {/* ========================================================= */}
+      {visibleWindows.quests && (
+        <div className="pointer-events-auto absolute bottom-22 right-4 z-20 font-mono select-none">
+          <div className="bg-slate-900/95 backdrop-blur-2xl border-2 border-purple-500/60 rounded-2xl shadow-2xl text-slate-100 w-[290px] overflow-hidden transition-all duration-300">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-950/80 via-slate-900 to-slate-950 px-3.5 py-2.5 border-b border-purple-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Crosshair className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-xs font-black text-purple-400 tracking-wider">
+                  AKTIVNE ULIČNE MISIJE
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setMinimizedQuests(!minimizedQuests)}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition cursor-pointer"
+                  title={minimizedQuests ? 'Proširi' : 'Umanji'}
+                >
+                  {minimizedQuests ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => setVisibleWindows((v) => ({ ...v, quests: false }))}
+                  className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-xs font-bold"
+                  title="Zatvori zadatke"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {!minimizedQuests && (
+              <div className="p-3 space-y-2 text-[11px] max-h-56 overflow-y-auto">
+                {/* Dynamic missions active */}
+                {dynamicMissions
+                  .filter((m) => m.status === 'active')
+                  .map((dm) => (
+                    <div
+                      key={dm.id}
+                      className="p-2.5 rounded-xl bg-purple-950/60 border border-purple-500/50 shadow-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-white text-xs">{dm.title}</span>
+                        <span className="text-[9px] font-bold text-amber-400">+${dm.rewardCash}</span>
+                      </div>
+                      <div className="text-[10px] text-purple-300 mt-1">{dm.description}</div>
+                      <div className="text-[9px] text-slate-400 mt-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-cyan-400" />
+                        <span>{dm.locationName}</span>
+                      </div>
+                    </div>
+                  ))}
+
+                {/* Quests from list */}
+                {quests.map((q) => (
+                  <div
+                    key={q.id}
+                    className={`p-2.5 rounded-xl border transition ${
+                      q.completed
+                        ? 'bg-slate-950/40 border-slate-800/80 text-slate-500'
+                        : 'bg-slate-950/80 border-slate-700/80 text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold flex items-center gap-1.5 truncate">
+                        {q.completed ? (
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 animate-ping" />
+                        )}
+                        <span className="truncate">{q.title}</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-400 font-bold shrink-0">
+                        +${q.rewardCash}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 line-clamp-2">{q.description}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* PROZOR 5: 🎮 KONTROLE NA EKRANU (TOUCH / MOUSE)          */}
+      {/* ========================================================= */}
+      {visibleWindows.controls && (
+        <div className="pointer-events-auto absolute bottom-22 right-[310px] z-20 font-mono select-none hidden lg:block">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-2.5 shadow-xl w-[140px]">
+            <div className="flex items-center justify-between mb-1.5 text-[10px] text-slate-400 font-bold">
+              <span>KONTROLE</span>
               <button
-                onClick={() => setMinimizedQuests(!minimizedQuests)}
-                className="text-slate-400 hover:text-white"
+                onClick={() => setMinimizedControls(!minimizedControls)}
+                className="cursor-pointer text-slate-400 hover:text-white"
               >
-                {minimizedQuests ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+                {minimizedControls ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
             </div>
-          </div>
 
-          {!minimizedQuests && (
-            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              {quests.map((q) => (
-                <div
-                  key={q.id}
-                  className={`p-2 rounded-xl border text-[10px] transition ${
-                    q.completed
-                      ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                      : 'bg-slate-950/70 border-slate-800 text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-bold mb-0.5">
-                    <span className="truncate">{q.title}</span>
-                    {q.completed ? (
-                      <span className="flex items-center gap-0.5 text-emerald-400 text-[9px]">
-                        <CheckCircle className="w-3 h-3" /> Rešeno
-                      </span>
-                    ) : (
-                      <span className="text-amber-400 font-black text-[9px]">+${q.rewardCash}</span>
-                    )}
-                  </div>
-                  <div className="text-[9px] text-slate-400 line-clamp-1">{q.location}</div>
+            {!minimizedControls && (
+              <>
+                <div className="grid grid-cols-3 gap-1 mb-1.5">
+                  <div />
+                  <button
+                    onMouseDown={() => triggerKey('w', true)}
+                    onMouseUp={() => triggerKey('w', false)}
+                    className="h-8 rounded-lg bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
+                  <div />
+                  <button
+                    onMouseDown={() => triggerKey('a', true)}
+                    onMouseUp={() => triggerKey('a', false)}
+                    className="h-8 rounded-lg bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onMouseDown={() => triggerKey('s', true)}
+                    onMouseUp={() => triggerKey('s', false)}
+                    className="h-8 rounded-lg bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    onMouseDown={() => triggerKey('d', true)}
+                    onMouseUp={() => triggerKey('d', false)}
+                    className="h-8 rounded-lg bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* D-Pad Dodirne Kontrole za Kretanje (W, A, S, D, Skok) */}
-        <div className="bg-slate-900/95 backdrop-blur-2xl p-2 rounded-2xl border-2 border-slate-700/80 shadow-2xl flex flex-col items-center gap-1">
-          <div className="text-[9px] text-slate-400 font-bold">KONTROLE</div>
-          <div className="grid grid-cols-3 gap-1">
-            <div />
-            <button
-              onMouseDown={() => triggerKey('w', true)}
-              onMouseUp={() => triggerKey('w', false)}
-              onTouchStart={() => triggerKey('w', true)}
-              onTouchEnd={() => triggerKey('w', false)}
-              className="w-10 h-10 rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white font-bold transition shadow-md cursor-pointer"
-              title="Napred (W)"
-            >
-              <ArrowUp className="w-5 h-5" />
-            </button>
-            <div />
-
-            <button
-              onMouseDown={() => triggerKey('a', true)}
-              onMouseUp={() => triggerKey('a', false)}
-              onTouchStart={() => triggerKey('a', true)}
-              onTouchEnd={() => triggerKey('a', false)}
-              className="w-10 h-10 rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white font-bold transition shadow-md cursor-pointer"
-              title="Levo (A)"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-
-            <button
-              onMouseDown={() => triggerKey('s', true)}
-              onMouseUp={() => triggerKey('s', false)}
-              onTouchStart={() => triggerKey('s', true)}
-              onTouchEnd={() => triggerKey('s', false)}
-              className="w-10 h-10 rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white font-bold transition shadow-md cursor-pointer"
-              title="Nazad (S)"
-            >
-              <ArrowDown className="w-5 h-5" />
-            </button>
-
-            <button
-              onMouseDown={() => triggerKey('d', true)}
-              onMouseUp={() => triggerKey('d', false)}
-              onTouchStart={() => triggerKey('d', true)}
-              onTouchEnd={() => triggerKey('d', false)}
-              className="w-10 h-10 rounded-xl bg-slate-800 active:bg-cyan-600 flex items-center justify-center text-white font-bold transition shadow-md cursor-pointer"
-              title="Desno (D)"
-            >
-              <ArrowRight className="w-5 h-5" />
-            </button>
+                <button
+                  onMouseDown={() => triggerKey(' ', true)}
+                  onMouseUp={() => triggerKey(' ', false)}
+                  className="w-full py-1 rounded-lg bg-cyan-600 active:bg-cyan-500 text-white font-black text-[9px] cursor-pointer"
+                >
+                  SKOK [SPACE]
+                </button>
+              </>
+            )}
           </div>
-
-          {/* Dugme za Skok (SPACE) */}
-          <button
-            onMouseDown={() => triggerKey(' ', true)}
-            onMouseUp={() => triggerKey(' ', false)}
-            onTouchStart={() => triggerKey(' ', true)}
-            onTouchEnd={() => triggerKey(' ', false)}
-            className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 active:brightness-125 text-white font-black text-[10px] transition shadow-md cursor-pointer flex items-center justify-center gap-1"
-          >
-            <Zap className="w-3 h-3" /> SKOK [SPACE]
-          </button>
         </div>
-      </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* BOTTOM TICKER: THUG LIFE POŽAREVAC NOĆU NEWS              */}
+      {/* ========================================================= */}
+      <PožarevacNewsTicker wantedLevel={wantedLevel} />
 
       {/* ========================================================= */}
       {/* MODAL: NADOGRADNJA OSOBINA LIKA (NABUDŽI OPREMU)          */}
@@ -627,72 +1043,93 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
           <div className="bg-slate-900 border-2 border-emerald-500/70 rounded-3xl p-6 shadow-2xl max-w-md w-full text-white">
             <div className="flex items-center justify-between pb-3 border-b border-emerald-500/30">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-emerald-400" />
-                <span className="font-black text-base text-emerald-400">
-                  NADOGRADNJA LIKA (POŽAREVAC RPG)
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
+                <span className="text-base font-black text-emerald-400">
+                  NADOGRADNJA OSOBINA LIKA
                 </span>
               </div>
               <button
                 onClick={() => setShowUpgradeModal(false)}
-                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"
+                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              {/* Brzina Kretanja */}
+            <div className="my-4 space-y-3">
               <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
                 <div>
-                  <div className="font-black text-xs text-cyan-300">⚡ ULIČNI SPRINT & BRZINA</div>
-                  <div className="text-[10px] text-slate-400">Trenutno: {stats.moveSpeed}x brzina</div>
+                  <div className="text-xs font-black text-white">BRZINA SPRINTA & TRČANJA</div>
+                  <div className="text-[10px] text-slate-400">
+                    Trenutno: {(stats.moveSpeed * 100).toFixed(0)}% osnovne brzine
+                  </div>
                 </div>
                 <button
-                  onClick={() => onUpgradeStat('speed')}
                   disabled={stats.cash < 500}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black text-xs transition cursor-pointer"
+                  onClick={() => {
+                    onUpgradeStat('speed');
+                    audioDsp.playThugCoinSound();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition cursor-pointer ${
+                    stats.cash >= 500
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
                 >
-                  +$500
+                  +$500 (+10%)
                 </button>
               </div>
 
-              {/* Snaga Skoka */}
               <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
                 <div>
-                  <div className="font-black text-xs text-amber-300">🦘 AKROBATSKI SKOK</div>
-                  <div className="text-[10px] text-slate-400">Trenutno: {stats.jumpPower}x visina</div>
+                  <div className="text-xs font-black text-white">SNAGA SKOKA (JUMP POWER)</div>
+                  <div className="text-[10px] text-slate-400">
+                    Trenutno: {(stats.jumpPower * 100).toFixed(0)}% vertikalni odskok
+                  </div>
                 </div>
                 <button
-                  onClick={() => onUpgradeStat('jump')}
-                  disabled={stats.cash < 750}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs transition cursor-pointer"
+                  disabled={stats.cash < 600}
+                  onClick={() => {
+                    onUpgradeStat('jump');
+                    audioDsp.playThugCoinSound();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition cursor-pointer ${
+                    stats.cash >= 600
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
                 >
-                  +$750
+                  +$600 (+15%)
                 </button>
               </div>
 
-              {/* Maksimalna Stamina & Respekt */}
               <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
                 <div>
-                  <div className="font-black text-xs text-purple-300">💪 RESPEKT & STAMINA</div>
-                  <div className="text-[10px] text-slate-400">Max stamina: {stats.maxStamina} (+10 Respekt)</div>
+                  <div className="text-xs font-black text-white">MAX STAMINA ZA BEŽANJE</div>
+                  <div className="text-[10px] text-slate-400">
+                    Trenutno: {stats.maxStamina} bodova izdržljivosti
+                  </div>
                 </div>
                 <button
-                  onClick={() => onUpgradeStat('stamina')}
-                  disabled={stats.cash < 1000}
-                  className="px-3 py-1.5 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-slate-950 font-black text-xs transition cursor-pointer"
+                  disabled={stats.cash < 450}
+                  onClick={() => {
+                    onUpgradeStat('stamina');
+                    audioDsp.playThugCoinSound();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition cursor-pointer ${
+                    stats.cash >= 450
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
                 >
-                  +$1,000
+                  +$450 (+20)
                 </button>
               </div>
             </div>
 
-            <button
-              onClick={() => setShowUpgradeModal(false)}
-              className="mt-5 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs transition"
-            >
-              ZATVORI
-            </button>
+            <div className="text-center pt-2 border-t border-slate-800 text-[10px] text-slate-400">
+              Keš na računu: <strong className="text-emerald-400">${stats.cash}</strong>
+            </div>
           </div>
         </div>
       )}

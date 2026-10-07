@@ -67,19 +67,19 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   const cycleBloom = () => {
     if (!bloomEnabled) {
       setBloomEnabled(true);
-      setBloomStrength(1.25);
-    } else if (bloomStrength > 1.3) {
-      setBloomEnabled(false);
+      setBloomStrength(0.25);
+    } else if (bloomStrength < 0.4) {
+      setBloomStrength(0.5);
     } else {
-      setBloomStrength(1.75);
+      setBloomEnabled(false);
     }
     audioDsp.playRotateTick();
   };
 
   const getBloomLabel = () => {
-    if (!bloomEnabled) return 'Sjaj: Isključen';
-    if (bloomStrength > 1.3) return 'Sjaj: 1.8x Max';
-    return 'Sjaj: 1.3x Normal';
+    if (!bloomEnabled) return 'Sjaj: Isključen (Oštar)';
+    if (bloomStrength > 0.4) return 'Sjaj: 0.5x Neon';
+    return 'Sjaj: 0.25x Suptilan';
   };
 
   return (

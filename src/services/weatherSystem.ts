@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type WeatherState = 'Clear' | 'Rain' | 'Cyber-Fog';
+export type WeatherState = 'Clear' | 'Rain' | 'Cyber-Storm' | 'Cyber-Fog';
 
 export class WeatherSystem {
   public currentState: WeatherState = 'Clear';

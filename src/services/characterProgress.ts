@@ -1,4 +1,6 @@
 // [AiChatBratina v10.0] - GTA Požarevac RPG Character System
+import { InventoryItem, PlantPlot, INITIAL_PLANT_PLOTS } from './streetEconomy';
+
 export interface CharacterStats {
   level: number;
   rankTitle: string;
@@ -13,6 +15,8 @@ export interface CharacterStats {
   moveSpeed: number;
   jumpPower: number;
   unlockedSkills: string[];
+  wantedLevel: number; // 0 to 5 stars ⭐
+  equippedGear: string[];
 }
 
 export interface Quest {
@@ -56,6 +60,33 @@ export const initialQuests: Quest[] = [
     completed: false,
     description: 'Aktiviraj kvantni puls i neutrališi zaraženi INFECTED nod u centru grada.',
     targetCoords: { x: 6, z: -5 },
+  },
+];
+
+export const INITIAL_INVENTORY: InventoryItem[] = [
+  {
+    itemId: 'seed_cacalica',
+    name: 'Čačalica Bio-Seme',
+    quantity: 3,
+    icon: '🌱',
+    category: 'seeds',
+    sellPrice: 80,
+  },
+  {
+    itemId: 'booster_bratina_fuel',
+    name: 'Bratina Energy Drink 145BPM',
+    quantity: 2,
+    icon: '⚡',
+    category: 'booster',
+    sellPrice: 90,
+  },
+  {
+    itemId: 'gear_spray_master',
+    name: 'Montana 94 Spray Can Set',
+    quantity: 1,
+    icon: '🎨',
+    category: 'gear',
+    sellPrice: 200,
   },
 ];
 

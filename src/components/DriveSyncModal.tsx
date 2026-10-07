@@ -25,6 +25,8 @@ import {
 import { User } from 'firebase/auth';
 import { audioDsp } from '../services/audioDsp';
 
+export type { GameSaveData } from '../services/googleDrive';
+
 export interface DriveSyncModalProps {
   isOpen: boolean;
   onClose: () => void;

@@ -14,6 +14,7 @@ export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/documents');
 provider.setCustomParameters({ prompt: 'select_account' });
 
 let isSigningIn = false;

@@ -56,6 +56,18 @@ export class ThirdPersonController {
   // Mode override (e.g. Inspect Close-Up or Top-Down Drone)
   public activeMode: 'gtaFollow' | 'perspective' | 'isometric' | 'topDown' | 'closeUp' = 'gtaFollow';
 
+  public get isMoving(): boolean {
+    return Math.hypot(this.velocity.x, this.velocity.z) > 0.2;
+  }
+
+  public get isSprinting(): boolean {
+    return !!this.keys['shift'] && this.isMoving;
+  }
+
+  public get isGrounded(): boolean {
+    return !this.isJumping;
+  }
+
   private boundOnKeyDown: (e: KeyboardEvent) => void;
   private boundOnKeyUp: (e: KeyboardEvent) => void;
   private boundOnMouseDown: (e: MouseEvent) => void;
