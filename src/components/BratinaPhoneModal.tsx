@@ -34,7 +34,9 @@ export interface BratinaPhoneModalProps {
   isOpen: boolean;
   onClose: () => void;
   missions: DynamicMission[];
-  onActivateMission: (missionId: string) => void;
+  onActivateMission: (missionId: string) => string | null | void;
+  onAbandonMission: (missionId: string) => void;
+  missionFeedback?: string | null;
   onGenerateNewMission: () => void;
   timeOfDay: TimeOfDay;
   wantedLevel: number;
@@ -51,6 +53,8 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
   onClose,
   missions,
   onActivateMission,
+  onAbandonMission,
+  missionFeedback,
   onGenerateNewMission,
   timeOfDay,
   wantedLevel,
@@ -61,6 +65,7 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
   const [isSending, setIsSending] = useState<boolean>(false);
   const [radioStation, setRadioStation] = useState<RadioStationId>(audioDsp.currentStation);
   const [isRadioPlaying, setIsRadioPlaying] = useState<boolean>(audioDsp.getIsPlaying());
+  const [clockNow, setClockNow] = useState(Date.now());
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,6 +73,12 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
       setRadioStation(audioDsp.currentStation);
       setIsRadioPlaying(audioDsp.getIsPlaying());
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, [isOpen]);
 
   const handleToggleRadio = () => {
@@ -397,6 +408,11 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>GENERIŠI NOVU ULIČNU DOJAVU</span>
               </button>
+              {missionFeedback && (
+                <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/40 px-3 py-2 text-[10px] text-amber-200">
+                  {missionFeedback}
+                </div>
+              )}
 
               {/* Lista Misija */}
               <div className="space-y-2">
@@ -404,6 +420,9 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                   const isAvailable = m.status === 'available';
                   const isActive = m.status === 'active';
                   const isCompleted = m.status === 'completed';
+                  const isFailed = m.status === 'failed';
+                  const activeCheckpoint = m.checkpoints?.[m.checkpointIndex ?? 0];
+                  const secondsLeft = m.expiresAt ? Math.max(0, Math.ceil((m.expiresAt - clockNow) / 1000)) : null;
 
                   return (
                     <div
@@ -413,6 +432,8 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                           ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
                           : isActive
                           ? 'bg-cyan-950/40 border-cyan-400 text-white shadow-lg shadow-cyan-500/10'
+                          : isFailed
+                          ? 'bg-rose-950/20 border-rose-500/30 text-rose-200'
                           : 'bg-slate-950/70 border-slate-800 text-slate-300'
                       }`}
                     >
@@ -437,6 +458,18 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                         {m.description}
                       </p>
 
+                      {isActive && (activeCheckpoint || secondsLeft !== null) && (
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-cyan-500/20 bg-slate-950/80 px-2 py-1 text-[9px]">
+                          <span className="text-cyan-200">CILJ: {activeCheckpoint?.label ?? m.locationName}</span>
+                          {secondsLeft !== null && (
+                            <span className="shrink-0 font-bold text-amber-300">{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</span>
+                          )}
+                        </div>
+                      )}
+                      {isFailed && m.failureReason && (
+                        <div className="my-1 text-[9px] text-rose-300">NEUSPEH: {m.failureReason}</div>
+                      )}
+
                       {/* Dialogue snippet */}
                       <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[9px] text-amber-300/90 italic mb-2">
                         "{m.dialogueText}"
@@ -459,18 +492,22 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                             <CheckCircle className="w-3 h-3" /> ZAVRŠENO
                           </span>
                         ) : isActive ? (
-                          <span className="px-2 py-0.5 rounded bg-cyan-600 text-white font-black text-[9px] animate-pulse">
-                            U TOKU...
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-cyan-600 text-white font-black text-[9px] animate-pulse">U TOKU...</span>
+                            <button
+                              onClick={() => onAbandonMission(m.id)}
+                              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-rose-700 text-slate-300 hover:text-white font-black text-[9px] transition"
+                            >NAPUSTI</button>
+                          </div>
                         ) : (
                           <button
                             onClick={() => {
                               onActivateMission(m.id);
                               audioDsp.playRotateTick();
                             }}
-                            className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] transition cursor-pointer"
+                            className={`px-2.5 py-1 rounded-xl font-black text-[10px] transition cursor-pointer ${isFailed ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950'}`}
                           >
-                            PRIHVATI
+                            {isFailed ? 'POKUŠAJ PONOVO' : 'PRIHVATI'}
                           </button>
                         )}
                       </div>

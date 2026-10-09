@@ -49,6 +49,17 @@ export interface DynamicMission {
   turfZoneId?: string; // If it affects turf war
   wantedLevelChange?: number; // E.g. +1 or -1 upon completion/start
   timeLimitSeconds?: number;
+  checkpoints?: Array<{ label: string; x: number; z: number }>;
+  checkpointIndex?: number;
+  acceptedAt?: number;
+  expiresAt?: number;
+  progress?: {
+    packagePickedUp?: boolean;
+    tradeStarted?: boolean;
+    tradeCompleted?: boolean;
+    harvested?: boolean;
+  };
+  failureReason?: string;
   status: 'available' | 'active' | 'completed' | 'failed';
   isDaily: boolean;
 }
@@ -179,6 +190,11 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     dialogueText: 'Rodjo brate, čuvaj glavu! Drozdovi iz MUP-a patroliraju po Tabačkoj. Donesi fleš do Korzoa u gluvo doba noći i keš je tvoj!',
     completionText: 'Svaka čast bratina! Paket je stigao u sekundi. Sale ti uplaćuje pare na račun!',
     requiredTimeOfDay: 'night',
+    timeLimitSeconds: 240,
+    checkpoints: [
+      { label: 'Preuzmi paket na Tabačkoj', x: 0, z: -10 },
+      { label: 'Isporuči paket na Korzou', x: 8, z: -5 },
+    ],
     rewardCash: 2400,
     rewardXp: 400,
     rewardRespect: 15,
@@ -255,6 +271,10 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     dialogueText: 'Full Power, bratina! Kostolac Syndicate je prešao granicu. Idi na Korzo, postavi Konglomerat neonski transponder i donesi 100% kontrolu našem preduzeću!',
     completionText: 'Stari Korzo je sada naš! Kostolac Syndicate se povlači, a ti dobijaš +1800 RSD dnevnog prihoda!',
     requiredTimeOfDay: 'night',
+    checkpoints: [
+      { label: 'Obezbedi prilaz Starom Korzou', x: 9, z: -4 },
+      { label: 'Odbrani kontrolnu tačku na Korzou', x: 11.5, z: -1.5 },
+    ],
     rewardCash: 5200,
     rewardXp: 900,
     rewardRespect: 45,
@@ -275,6 +295,10 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     dialogueText: 'Rodjo brate, Hipodrom donosi ogroman novac od opklada. Zabela Mob misli da su gazde. Pokaži im šta je AiChatBratina v10.0 XP moć!',
     completionText: 'Hipodrom je pod zastavom Konglomerata! Ulične trke sada pune tvoj bankovni račun!',
     requiredTimeOfDay: 'any',
+    checkpoints: [
+      { label: 'Obezbedi ulaz na Hipodrom', x: 22, z: -13 },
+      { label: 'Odbrani istočni prolaz', x: 24.5, z: -10.5 },
+    ],
     rewardCash: 6500,
     rewardXp: 1100,
     rewardRespect: 55,
@@ -331,6 +355,11 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     dialogueText: 'Bratina, na buvljaku su izbacili paletu vojnih kasetofona iz 90-ih. Kupi ih za sitniš, dovuci na Tabačku i flipuj za duplo više! Čist biznis.',
     completionText: 'Obrnuo si robu za 10 minuta! Profit je u džepu, a roba rasprodata.',
     requiredTimeOfDay: 'day',
+    timeLimitSeconds: 420,
+    checkpoints: [
+      { label: 'Preuzmi robu na Buvljaku', x: -18, z: -14 },
+      { label: 'Prodaj robu na Tabačkoj', x: 0, z: -10 },
+    ],
     rewardCash: 3200,
     rewardXp: 450,
     rewardRespect: 20,
@@ -352,7 +381,7 @@ export class DynamicMissionEngine {
       { name: 'Stari Buvljak kod Pruge', x: -18, z: -14 },
     ];
 
-    const types: MissionType[] = ['delivery', 'turf_war', 'hit', 'plant_harvest', 'escape_police', 'romance'];
+    const types: MissionType[] = ['delivery', 'turf_war', 'hit', 'plant_harvest', 'escape_police', 'romance', 'trade_flip', 'dog_chase'];
     const givers = Object.values(GANG_CHARACTERS);
 
     return Array.from({ length: 4 }).map((_, i) => {
@@ -372,7 +401,36 @@ export class DynamicMissionEngine {
       } else if (type === 'romance') {
         title = `Sastanak na Ulici #${i + 1}: ${loc.name} 💕`;
         desc = `Opusti se sa devojkom Majom na lokaciji ${loc.name}.`;
+      } else if (type === 'trade_flip') {
+        title = `Buvljak Flip #${i + 1}: roba do Tabačke 📻`;
+        desc = 'Preuzmi robu na Buvljaku, obavi kupovinu i prodaj je na Tabačkoj pre isteka roka.';
+      } else if (type === 'plant_harvest') {
+        title = `Čačalica: berba pred svitanje #${i + 1} 🌿`;
+        desc = 'Neguj parcelu na Čačalici, uberi zrelu biljku, pa se vrati na označeni punkt.';
+      } else if (type === 'escape_police') {
+        title = `Izgubi patrolu #${i + 1}: ${loc.name} 🚨`;
+        desc = `Dođi do skrovišta na ${loc.name} tek pošto izgubiš policijsku poteru.`;
+      } else if (type === 'dog_chase') {
+        title = `Čopor kod ${loc.name} 🐕`;
+        desc = 'Priđi pažljivo, pronađi bezbedan prolaz i smiri napetu situaciju sa uličnim čoporom.';
       }
+
+      const checkpoints = type === 'delivery'
+        ? [
+            { label: 'Preuzmi paket na Tabačkoj', x: 0, z: -10 },
+            { label: `Isporuči paket: ${loc.name}`, x: loc.x, z: loc.z },
+          ]
+        : type === 'trade_flip'
+        ? [
+            { label: 'Preuzmi robu na Buvljaku', x: -18, z: -14 },
+            { label: 'Prodaj robu na Tabačkoj', x: 0, z: -10 },
+          ]
+        : type === 'turf_war'
+        ? [
+            { label: `Obezbedi prilaz: ${loc.name}`, x: loc.x, z: loc.z },
+            { label: 'Odbrani kontrolnu tačku', x: Math.max(-30, Math.min(30, loc.x + 2.5)), z: loc.z + 2.5 },
+          ]
+        : undefined;
 
       return {
         id: `daily_${currentDaySeed}_${i}`,
@@ -388,6 +446,8 @@ export class DynamicMissionEngine {
         rewardXp: 350 + i * 150,
         rewardRespect: 15 + i * 5,
         rewardGearName: i % 2 === 0 ? `Ulični Gedžet Mark-${i + 1}` : undefined,
+        timeLimitSeconds: type === 'delivery' ? 240 : type === 'trade_flip' ? 420 : undefined,
+        checkpoints,
         wantedLevelChange: type === 'escape_police' ? -1 : type === 'turf_war' ? 1 : 0,
         status: 'available',
         isDaily: true,

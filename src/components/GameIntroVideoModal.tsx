@@ -8,9 +8,7 @@ import {
   X,
   SkipForward,
   RotateCcw,
-  Sparkles,
   Upload,
-  Check,
   Settings,
   Tv,
 } from 'lucide-react';
@@ -23,16 +21,7 @@ export interface GameIntroVideoModalProps {
   onUpdateIntroVideo: (url: string) => void;
 }
 
-const DEFAULT_SAMPLE_VIDEOS = [
-  {
-    name: 'GTA Požarevac Cyber Trailer (Media CDN)',
-    url: 'https://cdn.jsdelivr.net/gh/mediaelement/mediaelement-files@master/big_buck_bunny.mp4',
-  },
-  {
-    name: 'Wikimedia Open Cinematic',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c0/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.480p.vp9.webm',
-  },
-];
+const DEFAULT_INTRO_VIDEO = '/videos/GameIntro_Pozarevac_ThugLife.mp4';
 
 export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
   isOpen,
@@ -52,12 +41,15 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadedVideoUrlRef = useRef<string | null>(null);
 
-  // Effective video URL: prop, or localStorage, or default sample
-  const activeVideoUrl =
-    introVideoUrl ||
-    localStorage.getItem('gta_pozaravac_intro_video') ||
-    DEFAULT_SAMPLE_VIDEOS[0].url;
+  // The game-specific MP4 is the expected packaged asset; the cyber-matrix canvas
+  // remains visible until that asset or a user-selected video is actually available.
+  const activeVideoUrl = introVideoUrl || DEFAULT_INTRO_VIDEO;
+
+  useEffect(() => () => {
+    if (uploadedVideoUrlRef.current) URL.revokeObjectURL(uploadedVideoUrlRef.current);
+  }, []);
 
   // ESC key to close / skip intro
   useEffect(() => {
@@ -82,6 +74,7 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setVideoError(false);
+      setVideoLoaded(false);
       setIsPlaying(true);
       setCurrentTime(0);
 
@@ -112,7 +105,7 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
 
   // Procedural Cyber Matrix fallback if video fails or is loading
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || (videoLoaded && !videoError)) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -185,7 +178,7 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
 
     renderSyntheticIntro();
     return () => cancelAnimationFrame(animId);
-  }, [isOpen, videoError]);
+  }, [isOpen, videoError, videoLoaded]);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -222,28 +215,40 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!['video/mp4', 'video/webm'].includes(file.type) || file.size > 250 * 1024 * 1024) {
+      setVideoError(true);
+      e.target.value = '';
+      return;
+    }
+    if (uploadedVideoUrlRef.current) URL.revokeObjectURL(uploadedVideoUrlRef.current);
     const url = URL.createObjectURL(file);
+    uploadedVideoUrlRef.current = url;
     onUpdateIntroVideo(url);
-    localStorage.setItem('gta_pozaravac_intro_video', url);
     setVideoError(false);
+    setVideoLoaded(false);
     setShowSettings(false);
   };
 
   const handleApplyCustomUrl = () => {
     if (!customUrlInput.trim()) return;
     const cleanUrl = customUrlInput.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(cleanUrl);
+    } catch {
+      setVideoError(true);
+      return;
+    }
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      setVideoError(true);
+      return;
+    }
     onUpdateIntroVideo(cleanUrl);
     localStorage.setItem('gta_pozaravac_intro_video', cleanUrl);
     setVideoError(false);
+    setVideoLoaded(false);
     setShowSettings(false);
     setCustomUrlInput('');
-  };
-
-  const handleSelectSample = (url: string) => {
-    onUpdateIntroVideo(url);
-    localStorage.setItem('gta_pozaravac_intro_video', url);
-    setVideoError(false);
-    setShowSettings(false);
   };
 
   if (!isOpen) return null;
@@ -283,7 +288,7 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
   return (
     <div
       onClick={handleSkip}
-      className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl font-mono select-none overflow-hidden"
+      className="pointer-events-auto fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-2xl font-mono select-none overflow-hidden"
     >
       {/* 21:9 Letterbox Bars Effect */}
       <div className="absolute top-0 left-0 right-0 h-10 sm:h-14 bg-black z-30 pointer-events-none border-b border-cyan-500/20 flex items-center justify-between px-6">
@@ -339,6 +344,13 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
             videoLoaded && !videoError ? 'opacity-100' : 'opacity-0'
           }`}
         />
+
+        {videoError && (
+          <div className="absolute z-[27] left-4 right-4 bottom-20 mx-auto max-w-lg rounded-xl border border-amber-400/40 bg-slate-950/95 p-3 text-center text-[10px] text-amber-200">
+            {!introVideoUrl ? <>Požarevački intro MP4 još nije dostupan u projektu. Očekivana putanja: <code>public/videos/GameIntro_Pozarevac_ThugLife.mp4</code>. </> : <>Izabrani video ne može da se reprodukuje. Proveri MP4/WebM fajl ili HTTPS link. </>}
+            Izaberi <b>Izvor Videa</b> da promeniš video.
+          </div>
+        )}
 
         {/* Retro VHS Scanlines & Vignette */}
         <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/80 via-transparent to-black/60" />
@@ -487,26 +499,10 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
               </button>
 
               <span className="text-[10px] text-slate-400">
-                Lokalni fajl se automatski pamti u memoriji browsera.
+              Lokalni fajl radi u ovoj sesiji; browser URL se ne upisuje u trajno skladište.
               </span>
             </div>
 
-            {/* Preset Samples */}
-            <div className="pt-2 border-t border-slate-800">
-              <div className="text-[10px] font-bold text-slate-400 mb-1.5">BRZI IZBOR UZORAKA:</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {DEFAULT_SAMPLE_VIDEOS.map((s, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSelectSample(s.url)}
-                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/50 text-left transition flex items-center justify-between text-xs cursor-pointer"
-                  >
-                    <span className="truncate pr-2 font-medium">{s.name}</span>
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         )}
       </div>

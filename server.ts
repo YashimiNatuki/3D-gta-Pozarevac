@@ -2,6 +2,12 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import {
+  isAllowedGoogleVideoUri,
+  isValidVideoOperationName,
+  MAX_GENERATED_VIDEO_BYTES,
+  readResponseBodyLimited,
+} from './src/services/videoDownloadSecurity';
 
 dotenv.config();
 
@@ -280,6 +286,10 @@ app.post('/api/generate-video', async (req, res) => {
 app.post('/api/video-status', async (req, res) => {
   try {
     const { operationName } = req.body;
+    if (!isValidVideoOperationName(operationName)) {
+      res.status(400).json({ error: { message: 'Invalid generated-video operation name.' } });
+      return;
+    }
     const apiKey = process.env.GEMINI_API_KEY;
     const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
 
@@ -287,8 +297,7 @@ app.post('/api/video-status', async (req, res) => {
       operation: { name: operationName } as any,
     });
 
-    const uri = updated.response?.generatedVideos?.[0]?.video?.uri || null;
-    res.json({ done: !!updated.done, error: updated.error || null, videoUri: uri });
+    res.json({ done: !!updated.done, error: updated.error || null });
   } catch (err: any) {
     console.error('[Veo Status Error]', err);
     res.status(500).json({ error: err.message });
@@ -298,37 +307,47 @@ app.post('/api/video-status', async (req, res) => {
 // 4. Veo Video Download Proxy
 app.post('/api/video-download', async (req, res) => {
   try {
-    const { operationName, videoUri } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    let downloadUri = videoUri;
-    if (!downloadUri && operationName) {
-      const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
-      const updated: any = await ai.operations.getVideosOperation({
-        operation: { name: operationName } as any,
-      });
-      downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+    const { operationName } = req.body;
+    if (!isValidVideoOperationName(operationName)) {
+      res.status(400).json({ error: 'A valid generated-video operation name is required.' });
+      return;
     }
 
-    if (!downloadUri) {
-      res.status(404).json({ error: 'Video URI not found' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+    const updated: any = await ai.operations.getVideosOperation({
+      operation: { name: operationName } as any,
+    });
+    const downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+
+    if (!isAllowedGoogleVideoUri(downloadUri)) {
+      res.status(404).json({ error: 'No downloadable video was returned by the generation service.' });
       return;
     }
 
     const videoRes = await fetch(downloadUri, {
       headers: { 'x-goog-api-key': apiKey || '' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!videoRes.ok) {
-      throw new Error(`Failed to fetch video: ${videoRes.status}`);
+      res.status(502).json({ error: 'The generation service could not provide the video.' });
+      return;
     }
 
+    const body = await readResponseBodyLimited(videoRes);
     res.setHeader('Content-Type', 'video/mp4');
-    const arrayBuffer = await videoRes.arrayBuffer();
-    res.end(Buffer.from(arrayBuffer));
+    res.setHeader('Content-Length', String(body.byteLength));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.end(Buffer.from(body));
   } catch (err: any) {
-    console.error('[Veo Download Error]', err);
-    res.status(500).json({ error: err.message });
+    console.error('[Veo Download Error]', err?.message || 'Unknown error');
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Generated video download failed or exceeded the size limit.' });
+    } else {
+      res.destroy();
+    }
   }
 });
 

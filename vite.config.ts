@@ -4,6 +4,11 @@ import path from 'path';
 import {defineConfig, Plugin} from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import {
+  isAllowedGoogleVideoUri,
+  isValidVideoOperationName,
+  readResponseBodyLimited,
+} from './src/services/videoDownloadSecurity';
 
 dotenv.config();
 
@@ -161,6 +166,12 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
           try {
             const parsed = JSON.parse(body || '{}');
             const { operationName } = parsed;
+            if (!isValidVideoOperationName(operationName)) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: { message: 'Invalid generated-video operation name.' } }));
+              return;
+            }
 
             const apiKey = process.env.GEMINI_API_KEY;
             const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
@@ -169,9 +180,8 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
               operation: { name: operationName } as any,
             });
 
-            const uri = updated.response?.generatedVideos?.[0]?.video?.uri || null;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ done: !!updated.done, error: updated.error || null, videoUri: uri }));
+            res.end(JSON.stringify({ done: !!updated.done, error: updated.error || null }));
           } catch (err: any) {
             console.error('[Veo Status Error]', err);
             res.statusCode = 500;
@@ -197,40 +207,52 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
         req.on('end', async () => {
           try {
             const parsed = JSON.parse(body || '{}');
-            const { operationName, videoUri } = parsed;
-            const apiKey = process.env.GEMINI_API_KEY;
-
-            let downloadUri = videoUri;
-            if (!downloadUri && operationName) {
-              const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
-              const updated: any = await ai.operations.getVideosOperation({
-                operation: { name: operationName } as any,
-              });
-              downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+            const { operationName } = parsed;
+            if (!isValidVideoOperationName(operationName)) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'A valid generated-video operation name is required.' }));
+              return;
             }
 
-            if (!downloadUri) {
+            const apiKey = process.env.GEMINI_API_KEY;
+            const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+            const updated: any = await ai.operations.getVideosOperation({
+              operation: { name: operationName } as any,
+            });
+            const downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+
+            if (!isAllowedGoogleVideoUri(downloadUri)) {
               res.statusCode = 404;
-              res.end(JSON.stringify({ error: 'Video URI not found' }));
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'No downloadable video was returned by the generation service.' }));
               return;
             }
 
             const videoRes = await fetch(downloadUri, {
               headers: { 'x-goog-api-key': apiKey || '' },
+              redirect: 'error',
+              signal: AbortSignal.timeout(30_000),
             });
 
             if (!videoRes.ok) {
-              throw new Error(`Failed to fetch video: ${videoRes.status}`);
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'The generation service could not provide the video.' }));
+              return;
             }
 
+            const videoBuffer = await readResponseBodyLimited(videoRes);
             res.setHeader('Content-Type', 'video/mp4');
-            const arrayBuffer = await videoRes.arrayBuffer();
-            res.end(Buffer.from(arrayBuffer));
+            res.setHeader('Content-Length', String(videoBuffer.byteLength));
+            res.setHeader('Cache-Control', 'private, no-store');
+            res.end(Buffer.from(videoBuffer));
           } catch (err: any) {
             console.error('[Veo Download Error]', err);
-            res.statusCode = 500;
+            if (res.headersSent) return;
+            res.statusCode = 502;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: err.message }));
+            res.end(JSON.stringify({ error: 'Generated video download failed or exceeded the size limit.' }));
           }
         });
       });

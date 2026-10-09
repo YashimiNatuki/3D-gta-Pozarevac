@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ThreeCanvas } from './components/ThreeCanvas';
 import { HudOverlay } from './components/HudOverlay';
 import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
@@ -32,6 +32,12 @@ import {
   TurfZone,
   INITIAL_TURF_ZONES,
 } from './services/dynamicMissionEngine';
+import {
+  acceptMission,
+  advanceMissionCheckpoint,
+  getMissionActivationBlocker,
+  getMissionCompletionBlocker,
+} from './services/missionRules';
 import { TurfWarModal } from './components/TurfWarModal';
 import { GoogleDocsModal } from './components/GoogleDocsModal';
 import { GoogleMapsModal } from './components/GoogleMapsModal';
@@ -98,6 +104,8 @@ export function App() {
 
   const [quests, setQuests] = useState<Quest[]>(initialQuests);
   const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(INITIAL_DYNAMIC_MISSIONS);
+  const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
+  const resolvingMissionIdsRef = useRef(new Set<string>());
   const [turfZones, setTurfZones] = useState<TurfZone[]>(INITIAL_TURF_ZONES);
   const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(INITIAL_PLANT_PLOTS);
   const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
@@ -112,9 +120,17 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
-  const [isIntroOpen, setIsIntroOpen] = useState(false);
+  const [isIntroOpen, setIsIntroOpen] = useState(true);
   const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('gta_pozaravac_intro_video') || null;
+    try {
+      const saved = localStorage.getItem('gta_pozaravac_intro_video');
+      if (!saved) return null;
+      const parsed = new URL(saved, window.location.origin);
+      if (parsed.protocol === 'blob:' || !['http:', 'https:'].includes(parsed.protocol)) return null;
+      return saved;
+    } catch {
+      return null;
+    }
   });
   const [isPhoneOpen, setIsPhoneOpen] = useState(false);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
@@ -221,12 +237,30 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setDynamicMissions((current) => {
+        let changed = false;
+        const next = current.map((mission) => {
+          if (mission.status === 'active' && mission.expiresAt && now >= mission.expiresAt) {
+            changed = true;
+            return { ...mission, status: 'failed' as const, failureReason: 'Vreme za zadatak je isteklo.' };
+          }
+          return mission;
+        });
+        return changed ? next : current;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleToggleAudio = () => {
     const newState = audioDsp.toggleBeat();
     setIsAudioPlaying(newState);
   };
 
-  const handleScoreIncrement = (amount: number) => {
+  const handleScoreIncrement = (amount: number, cashBonusMultiplier = 1.5, respectBonus = 2) => {
     setScore((prev) => prev + amount);
     setEnergyLevel((prev) => Math.min(100, prev + 2));
 
@@ -247,8 +281,8 @@ export function App() {
         level: newLevel,
         nextLevelXp: nextXp,
         rankTitle: getRankTitle(newLevel),
-        cash: prev.cash + Math.floor(amount * 1.5),
-        respect: Math.min(100, prev.respect + 2),
+        cash: prev.cash + Math.floor(amount * cashBonusMultiplier),
+        respect: Math.min(100, prev.respect + respectBonus),
       };
     });
   };
@@ -288,7 +322,7 @@ export function App() {
     setQuests((prev) =>
       prev.map((q) => {
         if (q.id === questId && !q.completed) {
-          handleScoreIncrement(q.rewardXp);
+          handleScoreIncrement(q.rewardXp, 0, 0);
           setCharacterStats((st) => ({
             ...st,
             cash: st.cash + q.rewardCash,
@@ -306,7 +340,7 @@ export function App() {
     audioDsp.playHarvestChime();
     setActivePoiDialogue({ poi, timestamp: Date.now() });
     setIsChatOpen(true);
-    handleScoreIncrement(poi.rewardXp);
+    handleScoreIncrement(poi.rewardXp, 0, 0);
     setCharacterStats((st) => ({
       ...st,
       cash: st.cash + poi.rewardCash,
@@ -315,77 +349,104 @@ export function App() {
   };
 
   // Dynamic Mission Handlers
-  const handleActivateMission = (missionId: string) => {
-    setDynamicMissions((prev) =>
-      prev.map((m) => (m.id === missionId ? { ...m, status: 'active' } : m))
-    );
+  const handleActivateMission = (missionId: string): string | null => {
+    const mission = dynamicMissions.find((item) => item.id === missionId);
+    if (!mission) return 'Zadatak više nije dostupan.';
+    const activeMission = dynamicMissions.find((item) => item.status === 'active');
+    const blocker = getMissionActivationBlocker(mission, activeMission, timeOfDay);
+    if (blocker) {
+      setMissionFeedback(blocker);
+      return blocker;
+    }
+
+    resolvingMissionIdsRef.current.delete(missionId);
+    setMissionFeedback(null);
+    setDynamicMissions((previous) => previous.map((item) =>
+      item.id === missionId ? acceptMission(item, Date.now()) : item
+    ));
+    return null;
   };
 
   const handleCompleteDynamicMission = (missionId: string) => {
-    setDynamicMissions((prev) =>
-      prev.map((m) => {
-        if (m.id === missionId && m.status !== 'completed') {
-          handleScoreIncrement(m.rewardXp);
-          setCharacterStats((st) => {
-            const newWanted = Math.max(
-              0,
-              Math.min(5, (st.wantedLevel || 0) + (m.wantedLevelChange || 0))
-            );
-            return {
-              ...st,
-              cash: st.cash + m.rewardCash,
-              respect: Math.min(100, st.respect + m.rewardRespect),
-              wantedLevel: newWanted,
-            };
-          });
+    if (resolvingMissionIdsRef.current.has(missionId)) return;
+    const mission = dynamicMissions.find((item) => item.id === missionId && item.status === 'active');
+    if (!mission) return;
 
-          // If turf war, capture zone for Konglomerat and play triumphant fanfare
-          if (m.type === 'turf_war' && m.turfZoneId) {
-            setTurfZones((tzs) =>
-              tzs.map((tz) =>
-                tz.id === m.turfZoneId
-                  ? {
-                      ...tz,
-                      controllingGang: 'Y!App Konglomerat',
-                      controlPercentage: 100,
-                      isContested: false,
-                    }
-                  : tz
-              )
-            );
-            audioDsp.playTurfWarVictory();
-          }
+    const checkpointUpdate = advanceMissionCheckpoint(mission);
+    if (checkpointUpdate) {
+      setDynamicMissions((current) => current.map((item) => item.id === missionId && item.status === 'active'
+        ? checkpointUpdate
+        : item
+      ));
+      setMissionFeedback(mission.checkpoints?.[checkpointUpdate.checkpointIndex ?? 0]?.label ?? 'Novi cilj je označen na radaru.');
+      return;
+    }
 
-          // If rewarded gear, add to inventory
-          if (m.rewardGearName) {
-            setInventory((inv) => [
-              ...inv,
-              {
-                itemId: `gear_${Date.now()}`,
-                name: m.rewardGearName!,
-                quantity: 1,
-                icon: '🎁',
-                category: 'gear',
-                sellPrice: 1500,
-              },
-            ]);
-          }
+    const blocker = getMissionCompletionBlocker(mission, {
+      now: Date.now(),
+      timeOfDay,
+      wantedLevel: characterStats.wantedLevel || 0,
+    });
+    if (blocker) {
+      setMissionFeedback(blocker);
+      return;
+    }
 
-          return { ...m, status: 'completed' };
-        }
-        return m;
-      })
-    );
+    resolvingMissionIdsRef.current.add(missionId);
+    setMissionFeedback(null);
+    setDynamicMissions((current) => current.map((item) => item.id === missionId && item.status === 'active'
+      ? { ...item, status: 'completed', failureReason: undefined }
+      : item
+    ));
+    // Mission XP is already accompanied by its explicit cash/respect reward; do not award XP-derived cash twice.
+    handleScoreIncrement(mission.rewardXp, 0, 0);
+    setCharacterStats((stats) => ({
+      ...stats,
+      cash: stats.cash + mission.rewardCash,
+      respect: Math.min(100, stats.respect + mission.rewardRespect),
+      wantedLevel: Math.max(0, Math.min(5, (stats.wantedLevel || 0) + (mission.wantedLevelChange || 0))),
+    }));
+
+    if (mission.type === 'turf_war' && mission.turfZoneId) {
+      setTurfZones((zones) => zones.map((zone) => zone.id === mission.turfZoneId
+        ? { ...zone, controllingGang: 'Y!App Konglomerat', controlPercentage: 100, isContested: false }
+        : zone
+      ));
+      audioDsp.playTurfWarVictory();
+    }
+
+    if (mission.rewardGearName) {
+      setInventory((items) => items.some((item) => item.name === mission.rewardGearName)
+        ? items
+        : [...items, {
+            itemId: `gear_${mission.id}`,
+            name: mission.rewardGearName!,
+            quantity: 1,
+            icon: '🎁',
+            category: 'gear',
+            sellPrice: 1500,
+          }]
+      );
+    }
+  };
+
+  const handleAbandonMission = (missionId: string) => {
+    resolvingMissionIdsRef.current.delete(missionId);
+    setDynamicMissions((current) => current.map((mission) => mission.id === missionId && mission.status === 'active'
+      ? { ...mission, status: 'failed', failureReason: 'Zadatak je napušten.' }
+      : mission
+    ));
+    setMissionFeedback('Zadatak je napušten. Možeš ga kasnije ponovo prihvatiti.');
   };
 
   const handleGenerateNewMission = () => {
-    const newMission = DynamicMissionEngine.generateProceduralMission(dynamicMissions.length);
+    const newMission = DynamicMissionEngine.generateProceduralMission(Date.now());
     setDynamicMissions((prev) => [newMission, ...prev]);
   };
 
   // Street Market Trading Handlers
   const handleBuyItem = (item: MarketItem, quantity: number, price: number) => {
-    if (characterStats.cash < price) return;
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0 || characterStats.cash < price) return;
 
     setCharacterStats((st) => ({ ...st, cash: st.cash - price }));
     setInventory((inv) => {
@@ -407,9 +468,19 @@ export function App() {
         },
       ];
     });
+    const distanceToMarketPickup = Math.hypot(playerPos.x - (-18), playerPos.z - (-14));
+    if (distanceToMarketPickup <= 7) {
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.status === 'active' && mission.type === 'trade_flip'
+          ? { ...mission, progress: { ...mission.progress, tradeStarted: true } }
+          : mission
+      ));
+    }
   };
 
   const handleSellItem = (invItem: InventoryItem, quantity: number, price: number) => {
+    const currentHolding = inventory.find((item) => item.itemId === invItem.itemId)?.quantity ?? 0;
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > currentHolding || !Number.isFinite(price) || price < 0) return;
     const totalCash = price * quantity;
     setCharacterStats((st) => ({ ...st, cash: st.cash + totalCash }));
 
@@ -423,6 +494,14 @@ export function App() {
         })
         .filter((i) => i.quantity > 0);
     });
+    const distanceToMarketSale = Math.hypot(playerPos.x, playerPos.z - (-10));
+    if (distanceToMarketSale <= 7) {
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.status === 'active' && mission.type === 'trade_flip' && mission.progress?.tradeStarted
+          ? { ...mission, progress: { ...mission.progress, tradeCompleted: true } }
+          : mission
+      ));
+    }
   };
 
   // Botanical Farming Handlers
@@ -504,6 +583,14 @@ export function App() {
         return p;
       })
     );
+
+    if (plot.id === 'plot_3' && Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) <= 7) {
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.status === 'active' && mission.type === 'plant_harvest'
+          ? { ...mission, progress: { ...mission.progress, harvested: true } }
+          : mission
+      ));
+    }
   };
 
   // Compile save data for Google Drive persistence
@@ -705,6 +792,8 @@ export function App() {
         onClose={() => setIsPhoneOpen(false)}
         missions={dynamicMissions}
         onActivateMission={handleActivateMission}
+        onAbandonMission={handleAbandonMission}
+        missionFeedback={missionFeedback}
         onGenerateNewMission={handleGenerateNewMission}
         timeOfDay={timeOfDay}
         wantedLevel={characterStats.wantedLevel || 0}
@@ -743,7 +832,7 @@ export function App() {
         onStartTurfMission={(zone) => {
           // Find or create turf war mission for this zone
           const matching = dynamicMissions.find(
-            (m) => m.turfZoneId === zone.id || m.targetCoords.x === zone.centerCoords.x
+            (m) => m.type === 'turf_war' && (m.turfZoneId === zone.id || (m.targetCoords.x === zone.centerCoords.x && m.targetCoords.z === zone.centerCoords.z))
           );
           if (matching) {
             handleActivateMission(matching.id);
@@ -751,10 +840,25 @@ export function App() {
             const newTurfMission = DynamicMissionEngine.generateProceduralMission(Date.now());
             newTurfMission.type = 'turf_war';
             newTurfMission.title = `Rat za Reon: ${zone.name} ⚔️`;
+            newTurfMission.description = `Obezbedi prilaz reonu, odbrani kontrolnu tačku i preuzmi ${zone.name} za svoju ekipu.`;
             newTurfMission.turfZoneId = zone.id;
+            newTurfMission.requiredTimeOfDay = 'any';
+            newTurfMission.timeLimitSeconds = undefined;
+            newTurfMission.wantedLevelChange = 0;
             newTurfMission.targetCoords = zone.centerCoords;
-            newTurfMission.status = 'active';
-            setDynamicMissions((prev) => [newTurfMission, ...prev]);
+            newTurfMission.checkpoints = [
+              { label: `Obezbedi prilaz: ${zone.name}`, x: zone.centerCoords.x, z: zone.centerCoords.z },
+              { label: 'Odbrani kontrolnu tačku', x: zone.centerCoords.x + 2.5, z: zone.centerCoords.z + 2.5 },
+            ];
+            const activeMission = dynamicMissions.find((mission) => mission.status === 'active');
+            const blocker = getMissionActivationBlocker(newTurfMission, activeMission, timeOfDay);
+            if (blocker) {
+              setMissionFeedback(blocker);
+              return;
+            }
+            newTurfMission.status = 'available';
+            setDynamicMissions((prev) => [acceptMission(newTurfMission, Date.now()), ...prev]);
+            setMissionFeedback(null);
           }
         }}
         playerCash={characterStats.cash}

@@ -115,7 +115,7 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({
             const dlRes = await fetch('/api/video-download', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ operationName, videoUri: statusData.videoUri }),
+              body: JSON.stringify({ operationName }),
             });
 
             if (!dlRes.ok) throw new Error('Neuspešno preuzimanje videa.');
@@ -298,7 +298,6 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({
                     onClick={() => {
                       if (onSetAsIntroVideo && videoUrl) {
                         onSetAsIntroVideo(videoUrl);
-                        localStorage.setItem('gta_pozaravac_intro_video', videoUrl);
                         setIsSetAsIntro(true);
                         audioDsp.playTurfWarVictory();
                       }
