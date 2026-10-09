@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ThreeCanvas } from './components/ThreeCanvas';
 import { HudOverlay } from './components/HudOverlay';
 import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
 import { AiChatDrawer } from './components/AiChatDrawer';
@@ -61,6 +60,10 @@ import {
   StreetEconomyEngine,
 } from './services/streetEconomy';
 
+const ThreeCanvas = React.lazy(() =>
+  import('./components/ThreeCanvas').then((module) => ({ default: module.ThreeCanvas }))
+);
+
 export function App() {
   const [score, setScore] = useState(1450);
   const [energyLevel, setEnergyLevel] = useState(78);
@@ -121,6 +124,7 @@ export function App() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
   const [isIntroOpen, setIsIntroOpen] = useState(true);
+  const [hasEnteredGame, setHasEnteredGame] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
     try {
       const saved = localStorage.getItem('gta_pozaravac_intro_video');
@@ -639,33 +643,43 @@ export function App() {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
       {/* 3D Scene Viewport: Satelitska Mapa Požarevca, AI Saobraćaj, Zgrade, Dinamičko Vreme & GTA Lik */}
-      <ThreeCanvas
-        cubeColor={cubeColor}
-        sphereColor={sphereColor}
-        cubeWireframe={cubeWireframe}
-        onCubeRotated={(rot) => setCubeRotation(rot)}
-        onScoreIncrement={handleScoreIncrement}
-        autoSpinCube={autoSpinCube}
-        cameraMode={cameraMode}
-        bloomEnabled={bloomEnabled}
-        bloomStrength={bloomStrength}
-        weather={weather}
-        onWeatherChange={setWeather}
-        characterStats={characterStats}
-        onUpdateCharacterPosition={setPlayerPos}
-        onCompleteQuest={handleCompleteQuest}
-        quests={quests}
-        dynamicMissions={dynamicMissions}
-        onCompleteDynamicMission={handleCompleteDynamicMission}
-        plantPlots={plantPlots}
-        onInteractWithPoi={handleInteractWithPoi}
-        onNearPoiChange={setNearPoi}
-        nearPoi={nearPoi}
-        outfit={outfit}
-        customConfig={customConfig}
-        isCctvActive={isCctvActive}
-        cctvSystem={cctvSystemRef.current}
-      />
+      {hasEnteredGame && (
+        <React.Suspense
+          fallback={(
+            <div className="absolute inset-0 z-40 grid place-items-center bg-slate-950 text-cyan-300 font-mono text-sm">
+              Učitavanje 3D sveta Požarevca…
+            </div>
+          )}
+        >
+          <ThreeCanvas
+            cubeColor={cubeColor}
+            sphereColor={sphereColor}
+            cubeWireframe={cubeWireframe}
+            onCubeRotated={(rot) => setCubeRotation(rot)}
+            onScoreIncrement={handleScoreIncrement}
+            autoSpinCube={autoSpinCube}
+            cameraMode={cameraMode}
+            bloomEnabled={bloomEnabled}
+            bloomStrength={bloomStrength}
+            weather={weather}
+            onWeatherChange={setWeather}
+            characterStats={characterStats}
+            onUpdateCharacterPosition={setPlayerPos}
+            onCompleteQuest={handleCompleteQuest}
+            quests={quests}
+            dynamicMissions={dynamicMissions}
+            onCompleteDynamicMission={handleCompleteDynamicMission}
+            plantPlots={plantPlots}
+            onInteractWithPoi={handleInteractWithPoi}
+            onNearPoiChange={setNearPoi}
+            nearPoi={nearPoi}
+            outfit={outfit}
+            customConfig={customConfig}
+            isCctvActive={isCctvActive}
+            cctvSystem={cctvSystemRef.current}
+          />
+        </React.Suspense>
+      )}
 
       {/* GTA Požarevac Odvojeni Modularni Prozori: Lik & Garderoba, Kamera, Radar, Misije, Telefon & Buvljak */}
       <GtaPožarevacHud
@@ -771,7 +785,10 @@ export function App() {
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
       <GameIntroVideoModal
         isOpen={isIntroOpen}
-        onClose={() => setIsIntroOpen(false)}
+        onClose={() => {
+          setHasEnteredGame(true);
+          setIsIntroOpen(false);
+        }}
         introVideoUrl={introVideoUrl}
         onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
       />

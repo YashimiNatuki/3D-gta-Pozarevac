@@ -356,7 +356,8 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
         <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/80 via-transparent to-black/60" />
         <div className="absolute inset-0 z-20 pointer-events-none opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:16px_16px]" />
 
-        {/* Dynamic GTA Cinematic Title Cards Overlay */}
+        {/* Use the original trailer typography while video plays; title cards belong to fallback only. */}
+        {!videoLoaded && (
         <div className="absolute inset-0 z-25 pointer-events-none flex flex-col justify-between p-6 sm:p-10">
           {/* Top Stamp */}
           <div className="flex items-center justify-between">
@@ -392,6 +393,18 @@ export const GameIntroVideoModal: React.FC<GameIntroVideoModalProps> = ({
             </div>
           </div>
         </div>
+        )}
+
+        {videoLoaded && (
+          <div className="absolute bottom-[4.5rem] left-4 right-4 z-25 pointer-events-none">
+            <div className="w-full h-1 bg-slate-800/80 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-cyan-500 to-amber-400 transition-all duration-200"
+                style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Interactive Controls Overlay Bar */}
         <div className="absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between bg-slate-950/90 backdrop-blur-xl border border-cyan-500/40 px-3 py-2 rounded-xl text-white">
