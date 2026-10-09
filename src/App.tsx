@@ -28,6 +28,7 @@ import {
   DynamicMission,
   INITIAL_DYNAMIC_MISSIONS,
   DynamicMissionEngine,
+  reconcileMissionCatalog,
   TurfZone,
   INITIAL_TURF_ZONES,
 } from './services/dynamicMissionEngine';
@@ -36,6 +37,8 @@ import {
   advanceMissionCheckpoint,
   getMissionActivationBlocker,
   getMissionCompletionBlocker,
+  recordTradePurchase,
+  recordTradeSale,
 } from './services/missionRules';
 import { TurfWarModal } from './components/TurfWarModal';
 import { GoogleDocsModal } from './components/GoogleDocsModal';
@@ -59,6 +62,7 @@ import {
   INITIAL_PLANT_PLOTS,
   TimeOfDay,
   StreetEconomyEngine,
+  isWithinMarketZone,
 } from './services/streetEconomy';
 
 const ThreeCanvas = React.lazy(() =>
@@ -113,8 +117,11 @@ export function App() {
   });
 
   const [quests, setQuests] = useState<Quest[]>(initialGameProgress?.quests ?? initialQuests);
-  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(initialGameProgress?.dynamicMissions ?? INITIAL_DYNAMIC_MISSIONS);
+  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(() =>
+    reconcileMissionCatalog(initialGameProgress?.dynamicMissions ?? INITIAL_DYNAMIC_MISSIONS)
+  );
   const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
+  const [marketFeedback, setMarketFeedback] = useState<string | null>(null);
   const resolvingMissionIdsRef = useRef(new Set<string>());
   const [turfZones, setTurfZones] = useState<TurfZone[]>(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES);
   const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(initialGameProgress?.plantPlots ?? INITIAL_PLANT_PLOTS);
@@ -248,7 +255,7 @@ export function App() {
           setEnergyLevel(saved.energyLevel);
           setCharacterStats(saved.characterStats);
           setQuests(saved.quests);
-          setDynamicMissions(saved.dynamicMissions);
+          setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
           setTurfZones(saved.turfZones);
           setPlantPlots(saved.plantPlots);
           setInventory(saved.inventory);
@@ -544,8 +551,24 @@ export function App() {
 
   // Street Market Trading Handlers
   const handleBuyItem = (item: MarketItem, quantity: number, price: number) => {
-    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0 || characterStats.cash < price) return;
+    if (!isWithinMarketZone(playerPos, 'buy')) {
+      setMarketFeedback('Kupovina je dostupna samo kod Buvljaka kod Pruge. Priđi tezgi na najviše 7 m.');
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
+      setMarketFeedback('Količina ili cena kupovine nije ispravna.');
+      return;
+    }
+    if (characterStats.cash < price) {
+      setMarketFeedback('Nemaš dovoljno keša za ovu kupovinu.');
+      return;
+    }
 
+    const activeTradeMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'trade_flip');
+    const wrongTradeItem = activeTradeMission?.requiredTradeItemId && activeTradeMission.requiredTradeItemId !== item.id;
+    setMarketFeedback(wrongTradeItem
+      ? `Kupovina je završena, ali ugovor traži ${activeTradeMission.requiredTradeItemName ?? 'drugi artikal'}.`
+      : null);
     setCharacterStats((st) => ({ ...st, cash: st.cash - price }));
     setInventory((inv) => {
       const existing = inv.find((i) => i.itemId === item.id);
@@ -566,19 +589,28 @@ export function App() {
         },
       ];
     });
-    const distanceToMarketPickup = Math.hypot(playerPos.x - (-18), playerPos.z - (-14));
-    if (distanceToMarketPickup <= 7) {
-      setDynamicMissions((missions) => missions.map((mission) =>
-        mission.status === 'active' && mission.type === 'trade_flip'
-          ? { ...mission, progress: { ...mission.progress, tradeStarted: true } }
-          : mission
-      ));
-    }
+    setDynamicMissions((missions) => missions.map((mission) =>
+      mission.status === 'active' && mission.type === 'trade_flip'
+        ? recordTradePurchase(mission, { id: item.id, name: item.name }, quantity)
+        : mission
+    ));
   };
 
   const handleSellItem = (invItem: InventoryItem, quantity: number, price: number) => {
+    if (!isWithinMarketZone(playerPos, 'sell')) {
+      setMarketFeedback('Prodaja je dostupna samo na Tabačkoj Čaršiji. Priđi označenom mestu na najviše 7 m.');
+      return;
+    }
     const currentHolding = inventory.find((item) => item.itemId === invItem.itemId)?.quantity ?? 0;
-    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > currentHolding || !Number.isFinite(price) || price < 0) return;
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > currentHolding || !Number.isFinite(price) || price < 0) {
+      setMarketFeedback('Količina ili cena prodaje nije ispravna.');
+      return;
+    }
+    const activeTradeMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'trade_flip');
+    const wrongTradeItem = activeTradeMission && activeTradeMission.progress?.tradeItemId !== invItem.itemId;
+    setMarketFeedback(wrongTradeItem
+      ? `Prodaja je završena, ali ova roba nije teret aktivnog ugovora${activeTradeMission.requiredTradeItemName ? ` (${activeTradeMission.requiredTradeItemName})` : ''}.`
+      : null);
     const totalCash = price * quantity;
     setCharacterStats((st) => ({ ...st, cash: st.cash + totalCash }));
 
@@ -592,14 +624,11 @@ export function App() {
         })
         .filter((i) => i.quantity > 0);
     });
-    const distanceToMarketSale = Math.hypot(playerPos.x, playerPos.z - (-10));
-    if (distanceToMarketSale <= 7) {
-      setDynamicMissions((missions) => missions.map((mission) =>
-        mission.status === 'active' && mission.type === 'trade_flip' && mission.progress?.tradeStarted
-          ? { ...mission, progress: { ...mission.progress, tradeCompleted: true } }
-          : mission
-      ));
-    }
+    setDynamicMissions((missions) => missions.map((mission) =>
+      mission.status === 'active' && mission.type === 'trade_flip'
+        ? recordTradeSale(mission, invItem.itemId, quantity)
+        : mission
+    ));
   };
 
   // Botanical Farming Handlers
@@ -726,7 +755,7 @@ export function App() {
       const saved = data.gameProgress;
       setCharacterStats(saved.characterStats);
       setQuests(saved.quests);
-      setDynamicMissions(saved.dynamicMissions);
+      setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
       setTurfZones(saved.turfZones);
       setPlantPlots(saved.plantPlots);
       setInventory(saved.inventory);
@@ -936,6 +965,9 @@ export function App() {
         playerCash={characterStats.cash}
         inventory={inventory}
         timeOfDay={timeOfDay}
+        canBuyHere={isWithinMarketZone(playerPos, 'buy')}
+        canSellHere={isWithinMarketZone(playerPos, 'sell')}
+        marketFeedback={marketFeedback}
         onBuyItem={handleBuyItem}
         onSellItem={handleSellItem}
       />

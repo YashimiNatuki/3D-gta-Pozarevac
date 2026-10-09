@@ -130,7 +130,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.88;
     container.appendChild(renderer.domElement);
@@ -238,7 +238,22 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 6. 3D URBAN BUILDINGS ALONG POŽAREVAC BLOCKS WITH NEON SIGNS
     const buildingsGroup = new THREE.Group();
     const buildingColors = [0x334155, 0x3f4e65, 0x475569, 0x2e3846, 0x52525b];
-    const windowMat = new THREE.MeshBasicMaterial({ color: 0xffea9f });
+    const windowGeo = new THREE.PlaneGeometry(0.62, 0.82);
+    const litWindowMat = new THREE.MeshStandardMaterial({
+      color: 0xffe7ad,
+      emissive: 0xffa726,
+      emissiveIntensity: 0.2,
+      roughness: 0.42,
+      metalness: 0.04,
+    });
+    const darkWindowMat = new THREE.MeshStandardMaterial({
+      color: 0x263445,
+      emissive: 0x050b14,
+      emissiveIntensity: 0.03,
+      roughness: 0.52,
+      metalness: 0.08,
+    });
+    const windowDummy = new THREE.Object3D();
 
     const createCityBuilding = (x: number, z: number, w: number, h: number, d: number, neonTitle?: string, neonColor?: number) => {
       const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
@@ -250,10 +265,46 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       building.receiveShadow = true;
       buildingsGroup.add(building);
 
-      const winGeo = new THREE.PlaneGeometry(w * 0.75, h * 0.65);
-      const win = new THREE.Mesh(winGeo, windowMat);
-      win.position.set(x, h * 0.55, z + d / 2 + 0.05);
-      buildingsGroup.add(win);
+      const columns = Math.max(2, Math.floor(w / 1.25));
+      const rows = Math.max(3, Math.floor(h / 1.8));
+      const windowCount = columns * rows;
+      const litWindows = new THREE.InstancedMesh(windowGeo, litWindowMat, windowCount);
+      const darkWindows = new THREE.InstancedMesh(windowGeo, darkWindowMat, windowCount);
+      let litIndex = 0;
+      let darkIndex = 0;
+      const stableSeed = Math.abs(Math.round(x * 13 + z * 7));
+
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          windowDummy.position.set(
+            x - w / 2 + ((column + 1) * w) / (columns + 1),
+            1.1 + (row * (h - 2.2)) / Math.max(1, rows - 1),
+            z + d / 2 + 0.055
+          );
+          windowDummy.rotation.set(0, 0, 0);
+          windowDummy.scale.set(1, 1, 1);
+          windowDummy.updateMatrix();
+
+          // A deterministic occupancy pattern gives each facade a natural mix of lit and dark rooms.
+          if ((stableSeed + column * 5 + row * 3) % 10 < 4) {
+            litWindows.setMatrixAt(litIndex, windowDummy.matrix);
+            litIndex += 1;
+          } else {
+            darkWindows.setMatrixAt(darkIndex, windowDummy.matrix);
+            darkIndex += 1;
+          }
+        }
+      }
+
+      litWindows.count = litIndex;
+      darkWindows.count = darkIndex;
+      litWindows.instanceMatrix.needsUpdate = true;
+      darkWindows.instanceMatrix.needsUpdate = true;
+      litWindows.castShadow = false;
+      darkWindows.castShadow = false;
+      litWindows.receiveShadow = false;
+      darkWindows.receiveShadow = false;
+      buildingsGroup.add(litWindows, darkWindows);
 
       if (neonTitle) {
         const signCanvas = document.createElement('canvas');

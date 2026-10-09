@@ -11,6 +11,10 @@ export interface MissionProgress {
   packagePickedUp?: boolean;
   tradeStarted?: boolean;
   tradeCompleted?: boolean;
+  tradeItemId?: string;
+  tradeItemName?: string;
+  tradeQuantity?: number;
+  tradeSoldQuantity?: number;
   harvested?: boolean;
 }
 
@@ -55,6 +59,64 @@ export function acceptMission(mission: StatefulMission, now: number): StatefulMi
   };
 }
 
+export function recordTradePurchase(
+  mission: StatefulMission,
+  item: { id: string; name: string },
+  quantity: number
+): StatefulMission {
+  if (mission.type !== 'trade_flip' || mission.status !== 'active' || !Number.isInteger(quantity) || quantity <= 0) {
+    return mission;
+  }
+  if (mission.requiredTradeItemId && mission.requiredTradeItemId !== item.id) return mission;
+
+  const previous = mission.progress;
+  const sameItem = previous?.tradeItemId === item.id;
+  const purchasedQuantity = (sameItem ? previous?.tradeQuantity ?? 0 : 0) + quantity;
+  const tradeQuantity = mission.requiredTradeQuantity
+    ? Math.min(mission.requiredTradeQuantity, purchasedQuantity)
+    : purchasedQuantity;
+  return {
+    ...mission,
+    progress: {
+      ...previous,
+      tradeStarted: true,
+      tradeCompleted: (sameItem ? previous?.tradeSoldQuantity ?? 0 : 0) >= tradeQuantity,
+      tradeItemId: item.id,
+      tradeItemName: item.name,
+      tradeQuantity,
+      tradeSoldQuantity: sameItem ? previous?.tradeSoldQuantity ?? 0 : 0,
+    },
+  };
+}
+
+export function recordTradeSale(
+  mission: StatefulMission,
+  itemId: string,
+  quantity: number
+): StatefulMission {
+  if (
+    mission.type !== 'trade_flip' ||
+    mission.status !== 'active' ||
+    mission.progress?.tradeItemId !== itemId ||
+    !Number.isInteger(quantity) ||
+    quantity <= 0
+  ) {
+    return mission;
+  }
+
+  const requiredQuantity = mission.progress.tradeQuantity ?? 0;
+  if (requiredQuantity <= 0) return mission;
+  const soldQuantity = Math.min(requiredQuantity, (mission.progress.tradeSoldQuantity ?? 0) + quantity);
+  return {
+    ...mission,
+    progress: {
+      ...mission.progress,
+      tradeSoldQuantity: soldQuantity,
+      tradeCompleted: soldQuantity >= requiredQuantity,
+    },
+  };
+}
+
 export function advanceMissionCheckpoint(mission: StatefulMission): StatefulMission | null {
   const checkpoints = mission.checkpoints;
   const index = mission.checkpointIndex ?? 0;
@@ -85,7 +147,10 @@ export function getMissionCompletionBlocker(
   if (mission.type === 'escape_police' && context.wantedLevel > 0) {
     return 'Najpre izgubi poteru i spusti nivo potrage na nulu.';
   }
-  if (mission.type === 'trade_flip' && !mission.progress?.tradeStarted) {
+  if (
+    mission.type === 'trade_flip' &&
+    (!mission.progress?.tradeStarted || !mission.progress.tradeItemId || (mission.progress.tradeQuantity ?? 0) <= 0)
+  ) {
     return 'Prvo kupi robu na Buvljaku, pa je donesi na označeno mesto.';
   }
   if (mission.type === 'trade_flip' && !mission.progress?.tradeCompleted) {

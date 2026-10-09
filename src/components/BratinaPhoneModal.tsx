@@ -458,11 +458,20 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                         {m.description}
                       </p>
 
-                      {isActive && (activeCheckpoint || secondsLeft !== null) && (
-                        <div className="flex items-center justify-between gap-2 rounded-lg border border-cyan-500/20 bg-slate-950/80 px-2 py-1 text-[9px]">
-                          <span className="text-cyan-200">CILJ: {activeCheckpoint?.label ?? m.locationName}</span>
-                          {secondsLeft !== null && (
-                            <span className="shrink-0 font-bold text-amber-300">{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</span>
+                      {isActive && (
+                        <div className="space-y-1 rounded-lg border border-cyan-500/20 bg-slate-950/80 px-2 py-1 text-[9px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-cyan-200">CILJ: {activeCheckpoint?.label ?? m.locationName}</span>
+                            {secondsLeft !== null && (
+                              <span className="shrink-0 font-bold text-amber-300">{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</span>
+                            )}
+                          </div>
+                          {m.type === 'trade_flip' && (
+                            <div className="text-slate-300">
+                              TERET: {m.progress?.tradeItemName
+                                ? `${m.progress.tradeItemName} (${m.progress.tradeSoldQuantity ?? 0}/${m.progress.tradeQuantity ?? 0} prodato)`
+                                : `nije preuzet — kupi ${m.requiredTradeItemName ?? 'robu'} na Buvljaku`}
+                            </div>
                           )}
                         </div>
                       )}

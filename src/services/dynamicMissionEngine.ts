@@ -50,6 +50,9 @@ export interface DynamicMission {
   wantedLevelChange?: number; // E.g. +1 or -1 upon completion/start
   timeLimitSeconds?: number;
   checkpoints?: Array<{ label: string; x: number; z: number }>;
+  requiredTradeItemId?: string;
+  requiredTradeItemName?: string;
+  requiredTradeQuantity?: number;
   checkpointIndex?: number;
   acceptedAt?: number;
   expiresAt?: number;
@@ -57,6 +60,10 @@ export interface DynamicMission {
     packagePickedUp?: boolean;
     tradeStarted?: boolean;
     tradeCompleted?: boolean;
+    tradeItemId?: string;
+    tradeItemName?: string;
+    tradeQuantity?: number;
+    tradeSoldQuantity?: number;
     harvested?: boolean;
   };
   failureReason?: string;
@@ -351,8 +358,8 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     giver: GANG_CHARACTERS.sale,
     locationName: 'Buvljak kod Pruge -> Tabačka Čaršija',
     targetCoords: { x: -17, z: -13 },
-    description: 'Kupi jeftino na Buvljaku kod Pruge, a prodaj na Tabačkoj Čaršiji uličnim hipsterima uz masnu zaradu.',
-    dialogueText: 'Bratina, na buvljaku su izbacili paletu vojnih kasetofona iz 90-ih. Kupi ih za sitniš, dovuci na Tabačku i flipuj za duplo više! Čist biznis.',
+    description: 'Na Buvljaku kod Pruge kupi 1 Retro Radio-Kasetofon 90-ih za 700 RSD, zatim prodaj isti artikal na Tabačkoj Čaršiji za 1.150 RSD (profit 450 RSD).',
+    dialogueText: 'Bratina, na buvljaku se pojavio traženi Radio-Kasetofon 90-ih. Uzmi jednu jedinicu za 700 RSD, sačuvaj je u rancu i prodaj kolekcionarima na Tabačkoj za 1.150 RSD. Čist biznis.',
     completionText: 'Obrnuo si robu za 10 minuta! Profit je u džepu, a roba rasprodata.',
     requiredTimeOfDay: 'day',
     timeLimitSeconds: 420,
@@ -360,6 +367,9 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
       { label: 'Preuzmi robu na Buvljaku', x: -18, z: -14 },
       { label: 'Prodaj robu na Tabačkoj', x: 0, z: -10 },
     ],
+    requiredTradeItemId: 'retro_radio_cassette',
+    requiredTradeItemName: 'Retro Radio-Kasetofon 90-ih',
+    requiredTradeQuantity: 1,
     rewardCash: 3200,
     rewardXp: 450,
     rewardRespect: 20,
@@ -368,6 +378,66 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     isDaily: true,
   },
 ];
+
+/** Reconcile saved progress with the current mission catalog after game updates. */
+export function reconcileMissionCatalog(
+  savedMissions: DynamicMission[],
+  definitions: DynamicMission[] = INITIAL_DYNAMIC_MISSIONS,
+  now: number = Date.now()
+): DynamicMission[] {
+  const definitionsById = new Map(definitions.map((mission) => [mission.id, mission]));
+  const savedIds = new Set(savedMissions.map((mission) => mission.id));
+
+  const reconciled = savedMissions.map((saved) => {
+    const definition = definitionsById.get(saved.id);
+    if (!definition) return saved;
+
+    const checkpoints = definition.checkpoints;
+    const checkpointIndex = saved.status === 'active' && checkpoints?.length
+      ? Math.min(Math.max(saved.checkpointIndex ?? 0, 0), checkpoints.length - 1)
+      : saved.checkpointIndex;
+    const activeCheckpoint = saved.status === 'active' && checkpoints?.length
+      ? checkpoints[checkpointIndex ?? 0]
+      : undefined;
+    const expiresAt = saved.status === 'active'
+      ? saved.expiresAt ?? (definition.timeLimitSeconds ? now + definition.timeLimitSeconds * 1000 : undefined)
+      : saved.expiresAt;
+    const preserveHistoricalRewards = saved.status === 'completed';
+
+    return {
+      ...definition,
+      ...saved,
+      title: definition.title,
+      type: definition.type,
+      giver: definition.giver,
+      locationName: definition.locationName,
+      description: definition.description,
+      dialogueText: definition.dialogueText,
+      completionText: definition.completionText,
+      requiredTimeOfDay: definition.requiredTimeOfDay,
+      timeLimitSeconds: definition.timeLimitSeconds,
+      checkpoints,
+      requiredTradeItemId: definition.requiredTradeItemId,
+      requiredTradeItemName: definition.requiredTradeItemName,
+      requiredTradeQuantity: definition.requiredTradeQuantity,
+      targetCoords: activeCheckpoint
+        ? { x: activeCheckpoint.x, z: activeCheckpoint.z }
+        : saved.targetCoords ?? definition.targetCoords,
+      checkpointIndex,
+      expiresAt,
+      rewardCash: preserveHistoricalRewards ? saved.rewardCash : definition.rewardCash,
+      rewardXp: preserveHistoricalRewards ? saved.rewardXp : definition.rewardXp,
+      rewardRespect: preserveHistoricalRewards ? saved.rewardRespect : definition.rewardRespect,
+      rewardGearName: preserveHistoricalRewards ? saved.rewardGearName : definition.rewardGearName,
+    };
+  });
+
+  const newlyAvailable = definitions
+    .filter((mission) => !savedIds.has(mission.id))
+    .map((mission) => ({ ...mission }));
+
+  return [...reconciled, ...newlyAvailable];
+}
 
 export class DynamicMissionEngine {
   public static generateDailyMissions(currentDaySeed: number = Date.now()): DynamicMission[] {

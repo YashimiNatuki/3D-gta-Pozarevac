@@ -40,6 +40,19 @@ export interface PlantPlot {
   } | null;
 }
 
+export const POZAREVAC_MARKET_ZONES = {
+  buy: { name: 'Buvljak kod Pruge', x: -18, z: -14, radius: 7 },
+  sell: { name: 'Tabačka Čaršija', x: 0, z: -10, radius: 7 },
+} as const;
+
+export type MarketZoneId = keyof typeof POZAREVAC_MARKET_ZONES;
+
+export function isWithinMarketZone(position: { x: number; z: number }, zoneId: MarketZoneId): boolean {
+  const zone = POZAREVAC_MARKET_ZONES[zoneId];
+  return Number.isFinite(position.x) && Number.isFinite(position.z) &&
+    Math.hypot(position.x - zone.x, position.z - zone.z) <= zone.radius;
+}
+
 export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
   // --- SEMENKE ZA SADNJU ---
   {
@@ -128,6 +141,16 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
     description: 'Prijemnik podešen na frekvenciju požarevačke policije i taksista. Dojavljuje racije na vreme.',
     icon: '📻',
     rarity: 'rare',
+  },
+  {
+    id: 'retro_radio_cassette',
+    name: 'Retro Radio-Kasetofon 90-ih',
+    category: 'electronics',
+    baseBuyPrice: 700,
+    baseSellPrice: 1150,
+    description: 'Polovan, ali ispravan radio-kasetofon sa buvljaka. Kolekcionari na Tabačkoj plaćaju premiju za originalnu analognu opremu.',
+    icon: '📻',
+    rarity: 'common',
   },
   {
     id: 'contraband_gold_chain',
