@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { createReadStream, promises as fs } from 'node:fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -8,6 +9,7 @@ import {
   MAX_GENERATED_VIDEO_BYTES,
   readResponseBodyLimited,
 } from './src/services/videoDownloadSecurity';
+import { parseSingleByteRange } from './src/services/videoRange';
 
 dotenv.config();
 
@@ -350,6 +352,47 @@ app.post('/api/video-download', async (req, res) => {
     }
   }
 });
+
+const serveIntroVideo: express.RequestHandler = (req, res, next) => {
+  const videoPath = path.resolve(process.cwd(), 'public/videos/GameIntro_Pozarevac_ThugLife.mp4');
+  void fs.stat(videoPath).then((file) => {
+    if (!file.isFile()) {
+      next();
+      return;
+    }
+
+    const range = parseSingleByteRange(req.headers.range, file.size);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    if (range.kind === 'unsatisfiable') {
+      res.status(416).setHeader('Content-Range', `bytes */${file.size}`).setHeader('Content-Length', '0').end();
+      return;
+    }
+
+    const start = range.kind === 'partial' ? range.start : 0;
+    const end = range.kind === 'partial' ? range.end : file.size - 1;
+    if (range.kind === 'partial') {
+      res.status(206).setHeader('Content-Range', `bytes ${start}-${end}/${file.size}`);
+    }
+    res.setHeader('Content-Length', String(Math.max(0, end - start + 1)));
+
+    if (req.method === 'HEAD' || file.size === 0) {
+      res.end();
+      return;
+    }
+
+    const stream = createReadStream(videoPath, { start, end });
+    stream.on('error', (error) => {
+      if (res.headersSent) res.destroy(error);
+      else res.status(500).end();
+    });
+    stream.pipe(res);
+  }).catch(next);
+};
+
+app.get('/videos/GameIntro_Pozarevac_ThugLife.mp4', serveIntroVideo);
 
 // Serve static frontend files
 const distPath = path.resolve(process.cwd(), 'dist');

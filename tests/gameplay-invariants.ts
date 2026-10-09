@@ -14,6 +14,7 @@ import {
   isValidVideoOperationName,
   readResponseBodyLimited,
 } from '../src/services/videoDownloadSecurity';
+import { parseSingleByteRange } from '../src/services/videoRange';
 import {
   GAME_PROGRESS_STORAGE_KEY,
   readGameProgress,
@@ -145,6 +146,13 @@ assert.equal(isAllowedGoogleVideoUri('https://storage.googleapis.com/bucket/vide
 assert.equal(isAllowedGoogleVideoUri('http://storage.googleapis.com/video.mp4'), false);
 assert.equal(isAllowedGoogleVideoUri('https://storage.googleapis.com.evil.example/video.mp4'), false);
 assert.equal(isAllowedGoogleVideoUri('https://user:pass@storage.googleapis.com/video.mp4'), false);
+assert.deepEqual(parseSingleByteRange('bytes=0-0', 100), { kind: 'partial', start: 0, end: 0 });
+assert.deepEqual(parseSingleByteRange('bytes=10-999', 100), { kind: 'partial', start: 10, end: 99 });
+assert.deepEqual(parseSingleByteRange('bytes=-10', 100), { kind: 'partial', start: 90, end: 99 });
+assert.deepEqual(parseSingleByteRange('bytes=100-', 100), { kind: 'unsatisfiable' });
+assert.deepEqual(parseSingleByteRange('bytes=10-5', 100), { kind: 'unsatisfiable' });
+assert.deepEqual(parseSingleByteRange('bytes=0-1,4-5', 100), { kind: 'full' });
+assert.deepEqual(parseSingleByteRange(undefined, 100), { kind: 'full' });
 
 const memory = new Map<string, string>();
 const memoryStorage: KeyValueStorage = {

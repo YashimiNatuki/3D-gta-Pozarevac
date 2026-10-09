@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { createReadStream, promises as fs } from 'node:fs';
 import {defineConfig, Plugin} from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
@@ -9,6 +10,7 @@ import {
   isValidVideoOperationName,
   readResponseBodyLimited,
 } from './src/services/videoDownloadSecurity';
+import { parseSingleByteRange } from './src/services/videoRange';
 
 dotenv.config();
 
@@ -16,6 +18,60 @@ function geminiChatApiPlugin(): Plugin {
   return {
     name: 'gemini-chat-api',
     configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const requestPath = (req.url ?? '/').split('?')[0];
+        if ((req.method !== 'GET' && req.method !== 'HEAD') || requestPath !== '/videos/GameIntro_Pozarevac_ThugLife.mp4') {
+          next();
+          return;
+        }
+
+        const videoPath = path.resolve(process.cwd(), 'public/videos/GameIntro_Pozarevac_ThugLife.mp4');
+        void fs.stat(videoPath).then((file) => {
+          if (!file.isFile()) {
+            next();
+            return;
+          }
+
+          const range = parseSingleByteRange(req.headers.range, file.size);
+          res.setHeader('Content-Type', 'video/mp4');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+
+          if (range.kind === 'unsatisfiable') {
+            res.statusCode = 416;
+            res.setHeader('Content-Range', `bytes */${file.size}`);
+            res.setHeader('Content-Length', '0');
+            res.end();
+            return;
+          }
+
+          const start = range.kind === 'partial' ? range.start : 0;
+          const end = range.kind === 'partial' ? range.end : file.size - 1;
+          if (range.kind === 'partial') {
+            res.statusCode = 206;
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${file.size}`);
+          } else {
+            res.statusCode = 200;
+          }
+          res.setHeader('Content-Length', String(Math.max(0, end - start + 1)));
+
+          if (req.method === 'HEAD' || file.size === 0) {
+            res.end();
+            return;
+          }
+
+          const stream = createReadStream(videoPath, { start, end });
+          stream.on('error', (error) => {
+            if (res.headersSent) res.destroy(error);
+            else {
+              res.statusCode = 500;
+              res.end();
+            }
+          });
+          stream.pipe(res);
+        }).catch(next);
+      });
+
       // 1. Chat API with Search Grounding or Maps Grounding & Model Selection
       server.middlewares.use('/api/chat', async (req, res) => {
         if (req.method !== 'POST') {
