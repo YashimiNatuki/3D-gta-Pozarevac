@@ -12,6 +12,13 @@ import {
   isValidVideoOperationName,
   readResponseBodyLimited,
 } from '../src/services/videoDownloadSecurity';
+import {
+  GAME_PROGRESS_STORAGE_KEY,
+  readGameProgress,
+  writeGameProgress,
+  type GameProgressData,
+  type KeyValueStorage,
+} from '../src/services/gameProgress';
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',
@@ -59,6 +66,32 @@ assert.equal(isAllowedGoogleVideoUri('http://storage.googleapis.com/video.mp4'),
 assert.equal(isAllowedGoogleVideoUri('https://storage.googleapis.com.evil.example/video.mp4'), false);
 assert.equal(isAllowedGoogleVideoUri('https://user:pass@storage.googleapis.com/video.mp4'), false);
 
+const memory = new Map<string, string>();
+const memoryStorage: KeyValueStorage = {
+  getItem: (key) => memory.get(key) ?? null,
+  setItem: (key, value) => { memory.set(key, value); },
+};
+const sampleProgress: GameProgressData = {
+  score: 2400,
+  energyLevel: 72,
+  characterStats: {
+    level: 2, rankTitle: 'Rookie', xp: 600, nextLevelXp: 1000, respect: 40,
+    cash: 4200, stamina: 85, maxStamina: 100, health: 100, maxHealth: 100,
+    moveSpeed: 1, jumpPower: 1, unlockedSkills: ['Cyber Sprint'], wantedLevel: 0, equippedGear: [],
+  },
+  quests: [], dynamicMissions: [], turfZones: [], plantPlots: [], inventory: [],
+};
+assert.equal(writeGameProgress(sampleProgress, memoryStorage, 1_000), true);
+assert.equal(readGameProgress(memoryStorage)?.characterStats.cash, 4200);
+assert.equal(readGameProgress(memoryStorage)?.score, 2400);
+memoryStorage.setItem(GAME_PROGRESS_STORAGE_KEY, '{broken-json');
+assert.equal(readGameProgress(memoryStorage), null);
+const deniedStorage: KeyValueStorage = {
+  getItem: () => null,
+  setItem: () => { throw new Error('quota exceeded'); },
+};
+assert.equal(writeGameProgress(sampleProgress, deniedStorage), false);
+
 async function verifyDownloadSizeLimit() {
   const acceptedResponse = new Response(new Uint8Array([1, 2, 3]));
   assert.equal((await readResponseBodyLimited(acceptedResponse, 4)).byteLength, 3);
@@ -66,7 +99,7 @@ async function verifyDownloadSizeLimit() {
   const oversizedResponse = new Response(new Uint8Array([1, 2, 3, 4, 5]));
   await assert.rejects(() => readResponseBodyLimited(oversizedResponse, 4), /allowed download size/);
 
-  console.log('Gameplay and video-download invariants passed.');
+  console.log('Gameplay, progress persistence, and video-download invariants passed.');
 }
 
 void verifyDownloadSizeLimit();

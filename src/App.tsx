@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HudOverlay } from './components/HudOverlay';
 import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
 import { AiChatDrawer } from './components/AiChatDrawer';
@@ -44,6 +44,7 @@ import { GooglePickerModal } from './components/GooglePickerModal';
 import { MasterPlanModal } from './components/MasterPlanModal';
 import { PickedGoogleFile } from './services/googlePicker';
 import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
+import { isGameProgressData, readGameProgress, writeGameProgress, type GameProgressData } from './services/gameProgress';
 import { CctvOverlay } from './components/CctvOverlay';
 import {
   CctvSystem,
@@ -65,8 +66,14 @@ const ThreeCanvas = React.lazy(() =>
 );
 
 export function App() {
-  const [score, setScore] = useState(1450);
-  const [energyLevel, setEnergyLevel] = useState(78);
+  const [initialGameProgress] = useState(() => readGameProgress());
+  const [progressHydrated, setProgressHydrated] = useState(false);
+  const [localProgressStatus, setLocalProgressStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [cloudProgressStatus, setCloudProgressStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const lastCloudSaveRef = useRef<{ userId: string; signature: string } | null>(null);
+
+  const [score, setScore] = useState(initialGameProgress?.score ?? 1450);
+  const [energyLevel, setEnergyLevel] = useState(initialGameProgress?.energyLevel ?? 78);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [cubeColor, setCubeColor] = useState('#00ffcc');
   const [sphereColor, setSphereColor] = useState('#ff007f');
@@ -87,7 +94,7 @@ export function App() {
   const [vaultEntities, setVaultEntities] = useState<EntityItem[]>(initialVaultEntities);
 
   // GTA Character Progression & Požarevac Quests
-  const [characterStats, setCharacterStats] = useState<CharacterStats>({
+  const [characterStats, setCharacterStats] = useState<CharacterStats>(initialGameProgress?.characterStats ?? {
     level: 1,
     rankTitle: getRankTitle(1),
     xp: 0,
@@ -105,14 +112,26 @@ export function App() {
     equippedGear: [],
   });
 
-  const [quests, setQuests] = useState<Quest[]>(initialQuests);
-  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(INITIAL_DYNAMIC_MISSIONS);
+  const [quests, setQuests] = useState<Quest[]>(initialGameProgress?.quests ?? initialQuests);
+  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(initialGameProgress?.dynamicMissions ?? INITIAL_DYNAMIC_MISSIONS);
   const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
   const resolvingMissionIdsRef = useRef(new Set<string>());
-  const [turfZones, setTurfZones] = useState<TurfZone[]>(INITIAL_TURF_ZONES);
-  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(INITIAL_PLANT_PLOTS);
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
+  const [turfZones, setTurfZones] = useState<TurfZone[]>(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES);
+  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(initialGameProgress?.plantPlots ?? INITIAL_PLANT_PLOTS);
+  const [inventory, setInventory] = useState<InventoryItem[]>(initialGameProgress?.inventory ?? INITIAL_INVENTORY);
   const [playerPos, setPlayerPos] = useState({ x: 0, z: 4, heading: 0 });
+  const gameProgress = useMemo<GameProgressData>(() => ({
+    score,
+    energyLevel,
+    characterStats,
+    quests,
+    dynamicMissions: dynamicMissions.slice(0, 250),
+    turfZones,
+    plantPlots,
+    inventory,
+  }), [score, energyLevel, characterStats, quests, dynamicMissions, turfZones, plantPlots, inventory]);
+  const gameProgressRef = useRef(gameProgress);
+  gameProgressRef.current = gameProgress;
 
   // POI interaction & dialogue trigger state
   const [nearPoi, setNearPoi] = useState<PožarevacPoi | null>(null);
@@ -199,32 +218,107 @@ export function App() {
     cctvSystemRef.current.pan(dx, dy);
   };
 
-  // Initialize Firebase Auth listener & auto-load Firestore progress
+  // Firebase identity listener; Drive OAuth tokens remain a separate, short-lived capability.
   useEffect(() => {
     const unsubscribe = initAuth(
-      async (user) => {
-        setCurrentUser(user);
-        try {
-          const cloudSave = await loadPlayerProgressFromFirestore(user.uid);
-          if (cloudSave) {
-            setCharacterStats(cloudSave.stats);
-            if (cloudSave.turfZones && cloudSave.turfZones.length > 0) {
-              setTurfZones(cloudSave.turfZones);
-            }
-            console.log('[Firestore Sync] Učitan napredak iz oblaka za:', user.email);
-          }
-        } catch (e) {
-          console.warn('[Firestore Sync] Prvo pokretanje ili greška pri učitavanju:', e);
-        }
-      },
+      (user) => setCurrentUser(user),
       () => {
         setCurrentUser(null);
+        setProgressHydrated(true);
       }
     );
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    setProgressHydrated(false);
+
+    void loadPlayerProgressFromFirestore(currentUser.uid)
+      .then((cloudSave) => {
+        if (cancelled || !cloudSave) return;
+        setCharacterStats(cloudSave.stats);
+        if (cloudSave.turfZones?.length) setTurfZones(cloudSave.turfZones);
+        if (isGameProgressData(cloudSave.gameProgress)) {
+          const saved = cloudSave.gameProgress;
+          setScore(saved.score);
+          setEnergyLevel(saved.energyLevel);
+          setCharacterStats(saved.characterStats);
+          setQuests(saved.quests);
+          setDynamicMissions(saved.dynamicMissions);
+          setTurfZones(saved.turfZones);
+          setPlantPlots(saved.plantPlots);
+          setInventory(saved.inventory);
+        }
+        console.log('[Firestore Sync] Učitan napredak iz oblaka za:', currentUser.email);
+      })
+      .catch((error) => {
+        console.warn('[Firestore Sync] Učitavanje nije uspelo; zadržavam lokalni progres:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setProgressHydrated(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!progressHydrated) return;
+    const persistLocally = () => {
+      setLocalProgressStatus(writeGameProgress(gameProgress) ? 'saved' : 'error');
+    };
+    const persistOnPageHide = () => { writeGameProgress(gameProgress); };
+    const timeout = window.setTimeout(persistLocally, 600);
+    window.addEventListener('pagehide', persistOnPageHide);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('pagehide', persistOnPageHide);
+    };
+  }, [gameProgress, progressHydrated]);
+
+  useEffect(() => {
+    if (!currentUser || !progressHydrated) return;
+    let saving = false;
+    let cancelled = false;
+
+    const saveLatestProgress = async () => {
+      const snapshot = gameProgressRef.current;
+      const signature = JSON.stringify(snapshot);
+      const previousSave = lastCloudSaveRef.current;
+      if (saving || (previousSave?.userId === currentUser.uid && previousSave.signature === signature)) return;
+
+      saving = true;
+      setCloudProgressStatus('saving');
+      try {
+        await savePlayerProgressToFirestore(
+          currentUser.uid,
+          currentUser.email ?? '',
+          snapshot.characterStats,
+          snapshot.turfZones,
+          snapshot
+        );
+        if (!cancelled) {
+          lastCloudSaveRef.current = { userId: currentUser.uid, signature };
+          setCloudProgressStatus('saved');
+        }
+      } catch (error) {
+        console.warn('[Firestore Sync] Autosave nije uspeo; lokalni save ostaje dostupan:', error);
+        if (!cancelled) setCloudProgressStatus('error');
+      } finally {
+        saving = false;
+      }
+    };
+
+    void saveLatestProgress();
+    const interval = window.setInterval(() => { void saveLatestProgress(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [currentUser, progressHydrated]);
 
   // Periodic Plant Growth Timer (Runs every 3.5 seconds)
   useEffect(() => {
@@ -619,6 +713,7 @@ export function App() {
       humidity: 58.2,
       bpm: 145,
     },
+    gameProgress,
   };
 
   const handleLoadSaveData = (data: GameSaveData) => {
@@ -627,6 +722,15 @@ export function App() {
     if (data.score !== undefined) setScore(data.score);
     if (data.energyLevel !== undefined) setEnergyLevel(data.energyLevel);
     if (data.cubeRotation) setCubeRotation(data.cubeRotation);
+    if (isGameProgressData(data.gameProgress)) {
+      const saved = data.gameProgress;
+      setCharacterStats(saved.characterStats);
+      setQuests(saved.quests);
+      setDynamicMissions(saved.dynamicMissions);
+      setTurfZones(saved.turfZones);
+      setPlantPlots(saved.plantPlots);
+      setInventory(saved.inventory);
+    }
     if (data.vaultEntities && Array.isArray(data.vaultEntities)) {
       setVaultEntities(
         data.vaultEntities.map((e: any) => ({
@@ -642,6 +746,12 @@ export function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
+      {progressHydrated && (
+        <div aria-live="polite" className="fixed bottom-2 right-2 z-40 rounded-md border border-emerald-400/30 bg-slate-950/85 px-2 py-1 font-mono text-[9px] text-emerald-200">
+          LOCAL SAVE: {localProgressStatus === 'saved' ? 'SAČUVANO' : localProgressStatus === 'error' ? 'NEDOSTUPAN' : 'ČUVANJE…'}
+          {currentUser && <> · CLOUD: {cloudProgressStatus === 'saving' ? 'SNIMANJE…' : cloudProgressStatus === 'saved' ? 'SAČUVANO' : cloudProgressStatus === 'error' ? 'GREŠKA' : 'ČEKA'}</>}
+        </div>
+      )}
       {/* 3D Scene Viewport: Satelitska Mapa Požarevca, AI Saobraćaj, Zgrade, Dinamičko Vreme & GTA Lik */}
       {hasEnteredGame && (
         <React.Suspense
@@ -752,7 +862,10 @@ export function App() {
         isOpen={isDriveOpen}
         onClose={() => setIsDriveOpen(false)}
         currentUser={currentUser}
-        onUserChanged={(u) => setCurrentUser(u)}
+        onUserChanged={(user) => {
+          setCurrentUser(user);
+          setProgressHydrated(!user);
+        }}
         currentSaveData={currentSaveData}
         onLoadSaveData={handleLoadSaveData}
       />

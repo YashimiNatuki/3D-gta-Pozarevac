@@ -1,4 +1,5 @@
 import { getAccessToken } from './firebaseAuth';
+import type { GameProgressData } from './gameProgress';
 
 export interface GameSaveData {
   version: string;
@@ -21,6 +22,7 @@ export interface GameSaveData {
     humidity: number;
     bpm: number;
   };
+  gameProgress?: GameProgressData;
 }
 
 export interface DriveFileItem {
