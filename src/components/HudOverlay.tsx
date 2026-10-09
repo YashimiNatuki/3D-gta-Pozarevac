@@ -34,6 +34,7 @@ export interface HudOverlayProps {
   onOpenChat: () => void;
   onOpenVault: () => void;
   onOpenVeo: () => void;
+  onOpenIntro?: () => void;
   userEmail?: string | null;
   vaultStats: { total: number; immortal: number; infected: number; buried: number };
 }
@@ -47,6 +48,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onOpenChat,
   onOpenVault,
   onOpenVeo,
+  onOpenIntro,
   userEmail,
   vaultStats,
 }) => {
@@ -135,6 +137,18 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
 
         {/* Desna Sekcija: Integrisani Akcioni Paneli */}
         <div className="pointer-events-auto flex items-center gap-2">
+          {/* Uvodna Špica Videa */}
+          {onOpenIntro && (
+            <button
+              onClick={onOpenIntro}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-purple-900/90 to-pink-900/90 hover:from-purple-800 hover:to-pink-800 backdrop-blur-2xl border border-pink-400/50 text-pink-200 hover:text-white transition shadow-xl text-[11px] font-black cursor-pointer shadow-pink-500/10"
+              title="Pogledaj Uvodnu Špicu Igrice"
+            >
+              <Film className="w-3.5 h-3.5 text-pink-400" />
+              <span className="hidden sm:inline">🎬 Špica</span>
+            </button>
+          )}
+
           {/* Veo 3 Video Studio */}
           <button
             onClick={onOpenVeo}

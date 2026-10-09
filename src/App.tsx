@@ -6,6 +6,7 @@ import { AiChatDrawer } from './components/AiChatDrawer';
 import { GraveyardVaultModal } from './components/GraveyardVaultModal';
 import { EntityItem, initialVaultEntities, SystemEngine } from './services/systemEngine';
 import { VeoStudioModal } from './components/VeoStudioModal';
+import { GameIntroVideoModal } from './components/GameIntroVideoModal';
 import { GtaPožarevacHud } from './components/GtaPožarevacHud';
 import { CharacterCreatorModal } from './components/CharacterCreatorModal';
 import { BratinaPhoneModal } from './components/BratinaPhoneModal';
@@ -111,6 +112,10 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
+  const [isIntroOpen, setIsIntroOpen] = useState(false);
+  const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
+    return localStorage.getItem('gta_pozaravac_intro_video') || null;
+  });
   const [isPhoneOpen, setIsPhoneOpen] = useState(false);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
   const [isFarmOpen, setIsFarmOpen] = useState(false);
@@ -599,6 +604,7 @@ export function App() {
           setCameraMode('closeUp');
         }}
         onOpenPhone={() => setIsPhoneOpen(true)}
+        onOpenIntro={() => setIsIntroOpen(true)}
         onOpenMarket={() => setIsMarketOpen(true)}
         onOpenFarm={() => setIsFarmOpen(true)}
         onOpenTurfWar={() => setIsTurfWarOpen(true)}
@@ -635,6 +641,7 @@ export function App() {
         onOpenChat={() => setIsChatOpen(true)}
         onOpenVault={() => setIsVaultOpen(true)}
         onOpenVeo={() => setIsVeoOpen(true)}
+        onOpenIntro={() => setIsIntroOpen(true)}
         userEmail={currentUser?.email}
         vaultStats={vaultStats}
       />
@@ -665,7 +672,22 @@ export function App() {
       />
 
       {/* Veo 3 Video Studio Modal */}
-      <VeoStudioModal isOpen={isVeoOpen} onClose={() => setIsVeoOpen(false)} />
+      <VeoStudioModal
+        isOpen={isVeoOpen}
+        onClose={() => setIsVeoOpen(false)}
+        onSetAsIntroVideo={(url) => {
+          setIntroVideoUrl(url);
+          setIsIntroOpen(true);
+        }}
+      />
+
+      {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
+      <GameIntroVideoModal
+        isOpen={isIntroOpen}
+        onClose={() => setIsIntroOpen(false)}
+        introVideoUrl={introVideoUrl}
+        onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
+      />
 
       {/* 3D Character Creator & Customizer Modal (Kreiraj Lika) */}
       <CharacterCreatorModal

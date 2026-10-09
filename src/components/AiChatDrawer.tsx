@@ -11,9 +11,12 @@ import {
   MapPin,
   Zap,
   Cpu,
+  Mic,
+  MicOff,
+  Loader2,
 } from 'lucide-react';
 import { audioDsp } from '../services/audioDsp';
-
+import { geminiStoryEngine } from '../services/geminiStoryEngine';
 import { PožarevacPoi } from '../services/pozaravacPoi';
 
 export interface ChatMessage {
@@ -48,8 +51,59 @@ export const AiChatDrawer: React.FC<AiChatDrawerProps> = ({ isOpen, onClose, act
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastHandledPoiTime = useRef<number>(0);
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      audioDsp.playClose();
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          stream.getTracks().forEach((track) => track.stop());
+
+          setIsTranscribing(true);
+          try {
+            const transcribed = await geminiStoryEngine.transcribeAudio(audioBlob);
+            if (transcribed) {
+              setInput(transcribed);
+              audioDsp.playSelect();
+            }
+          } catch (err) {
+            console.error('Transcription error:', err);
+            audioDsp.playErrorBuzz();
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        recorder.start();
+        setIsRecording(true);
+        audioDsp.playSelect();
+      } catch (err) {
+        console.error('Microphone access denied:', err);
+        audioDsp.playErrorBuzz();
+      }
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -405,9 +459,29 @@ export const AiChatDrawer: React.FC<AiChatDrawerProps> = ({ isOpen, onClose, act
           className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-500 focus:outline-none text-xs text-white placeholder-slate-500 font-sans"
         />
         <button
+          onClick={toggleRecording}
+          disabled={isLoading || isTranscribing}
+          title={isRecording ? 'Zaustavi snimanje glasa' : 'Snimi glasovnu poruku (Gemini 3.5 Transcribe)'}
+          className={`p-2.5 rounded-xl transition cursor-pointer flex items-center justify-center ${
+            isRecording
+              ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-600/40'
+              : isTranscribing
+              ? 'bg-amber-600 text-white animate-spin'
+              : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700'
+          }`}
+        >
+          {isTranscribing ? (
+            <Loader2 className="w-4 h-4 animate-spin text-amber-200" />
+          ) : isRecording ? (
+            <MicOff className="w-4 h-4 text-white" />
+          ) : (
+            <Mic className="w-4 h-4" />
+          )}
+        </button>
+        <button
           onClick={() => handleSendMessage()}
           disabled={!input.trim() || isLoading}
-          className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white disabled:opacity-40 transition shadow-lg shadow-cyan-600/20"
+          className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white disabled:opacity-40 transition shadow-lg shadow-cyan-600/20 cursor-pointer"
         >
           <Send className="w-4 h-4" />
         </button>

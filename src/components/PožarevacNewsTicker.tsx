@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Flame,
   Radio,
@@ -14,8 +14,10 @@ import {
   Play,
   Pause,
   FastForward,
+  Cpu,
 } from 'lucide-react';
 import { audioDsp } from '../services/audioDsp';
+import { geminiStoryEngine } from '../services/geminiStoryEngine';
 
 export interface NewsItem {
   id: string;
@@ -118,6 +120,27 @@ export const PožarevacNewsTicker: React.FC<PožarevacNewsTickerProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(35); // Seconds per loop
   const [selectedStory, setSelectedStory] = useState<NewsItem | null>(null);
+  const [liveChronicle, setLiveChronicle] = useState<string>(geminiStoryEngine.getCurrentChronicle());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLiveChronicle(geminiStoryEngine.getCurrentChronicle());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const geminiNewsItem: NewsItem = {
+    id: 'news_gemini_live',
+    category: 'konglomerat',
+    categoryLabel: 'GEMINI AI BILTEN',
+    categoryColor: 'bg-gradient-to-r from-cyan-500 to-purple-500 text-slate-950 font-black',
+    headline: liveChronicle,
+    fullStory: `[AUTENTIČNI GEMINI 3.8 FLASH HRONIČAR]: ${liveChronicle}. Generisano u realnom vremenu na osnovu aktivnosti Konglomerata u Požarevcu. Full Power, ro bro!`,
+    location: 'Centralni Reon Požarevac',
+    timeAgo: 'UŽIVO',
+  };
+
+  const activeFeed = [geminiNewsItem, ...POŽAREVAC_NEWS_FEED];
 
   return (
     <>
@@ -178,7 +201,7 @@ export const PožarevacNewsTicker: React.FC<PožarevacNewsTickerProps> = ({
               className={`animate-ticker-marquee ${isPaused ? 'paused' : ''} flex items-center`}
             >
               {/* Render items twice to create seamless loop */}
-              {[...POŽAREVAC_NEWS_FEED, ...POŽAREVAC_NEWS_FEED].map((item, index) => (
+              {[...activeFeed, ...activeFeed].map((item, index) => (
                 <div
                   key={`${item.id}_${index}`}
                   onClick={() => {

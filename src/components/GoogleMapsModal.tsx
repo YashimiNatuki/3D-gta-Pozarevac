@@ -9,7 +9,7 @@ import {
   Search,
   ExternalLink,
 } from 'lucide-react';
-import { POŽAREVAC_POIS, PožarevacPoi } from '../services/pozaravacPoi';
+import { POŽAREVAC_POIS, PožarevacPoi, localCoordsToGps } from '../services/pozaravacPoi';
 import { audioDsp } from '../services/audioDsp';
 
 export interface GoogleMapsModalProps {
@@ -30,11 +30,10 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Real world coordinates of Požarevac Center
-  const baseLat = 44.6199;
-  const baseLng = 21.1865;
-  const currentLat = (baseLat + playerPos.z * 0.0001).toFixed(5);
-  const currentLng = (baseLng + playerPos.x * 0.0001).toFixed(5);
+  // Real-world geodetic WGS84 coordinates of Požarevac Center
+  const gps = localCoordsToGps(playerPos.x, playerPos.z);
+  const currentLat = gps.lat.toFixed(5);
+  const currentLng = gps.lon.toFixed(5);
 
   const filteredPois = POŽAREVAC_POIS.filter(
     (p) =>

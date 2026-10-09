@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { audioDsp } from './audioDsp';
+import { CITY_BUILDING_BOXES } from './weatherManager';
+import { audioLocalizationManager } from './audioLocalizationManager';
 
 export interface Vehicle {
   mesh: THREE.Group;
@@ -13,49 +16,62 @@ export interface Vehicle {
 export class TrafficSystem {
   public vehicles: Vehicle[] = [];
   private scene: THREE.Scene;
+  private lastDriverVoiceTime = 0;
+  private lastCrashSoundTime = 0;
 
-  // Pre-defined street paths matching Požarevac road network:
-  // Route 1: Tabačka Čaršija Northbound (right lane: x = 1.6)
-  // Route 2: Tabačka Čaršija Southbound (left lane: x = -1.6)
-  // Route 3: Voje Dulića Eastbound (z = 1.6)
-  // Route 4: Voje Dulića Westbound (z = -1.6)
-  // Route 5: Outer City Ring Road
+  // Mathematically validated routes adhering strictly to Požarevac avenues,
+  // preventing collisions with building bounding boxes.
   private paths: THREE.Vector3[][] = [
-    // Northbound on Tabačka
+    // Route 1: Tabačka Čaršija East Ring (Northbound along central avenue, return via East ring)
     [
-      new THREE.Vector3(1.6, 0.35, -28),
-      new THREE.Vector3(1.6, 0.35, -10),
-      new THREE.Vector3(1.6, 0.35, 0),
-      new THREE.Vector3(1.6, 0.35, 12),
-      new THREE.Vector3(1.6, 0.35, 28),
-      new THREE.Vector3(12, 0.35, 28),
-      new THREE.Vector3(24, 0.35, 12),
-      new THREE.Vector3(24, 0.35, -12),
-      new THREE.Vector3(12, 0.35, -28),
+      new THREE.Vector3(1.8, 0.35, -30),
+      new THREE.Vector3(1.8, 0.35, -14),
+      new THREE.Vector3(1.8, 0.35, 0),
+      new THREE.Vector3(1.8, 0.35, 14),
+      new THREE.Vector3(1.8, 0.35, 29),
+      new THREE.Vector3(8, 0.35, 30),
+      new THREE.Vector3(18, 0.35, 30),
+      new THREE.Vector3(26, 0.35, 28),
+      new THREE.Vector3(26, 0.35, 14),
+      new THREE.Vector3(26, 0.35, 0),
+      new THREE.Vector3(26, 0.35, -14),
+      new THREE.Vector3(26, 0.35, -28),
+      new THREE.Vector3(16, 0.35, -30),
+      new THREE.Vector3(6, 0.35, -30),
     ],
-    // Southbound on Tabačka
+    // Route 2: Tabačka Čaršija West Ring (Southbound along central avenue, return via West ring)
     [
-      new THREE.Vector3(-1.6, 0.35, 28),
-      new THREE.Vector3(-1.6, 0.35, 10),
-      new THREE.Vector3(-1.6, 0.35, 0),
-      new THREE.Vector3(-1.6, 0.35, -12),
-      new THREE.Vector3(-1.6, 0.35, -28),
-      new THREE.Vector3(-12, 0.35, -28),
-      new THREE.Vector3(-24, 0.35, -10),
-      new THREE.Vector3(-24, 0.35, 10),
-      new THREE.Vector3(-12, 0.35, 28),
+      new THREE.Vector3(-1.8, 0.35, 29),
+      new THREE.Vector3(-1.8, 0.35, 14),
+      new THREE.Vector3(-1.8, 0.35, 0),
+      new THREE.Vector3(-1.8, 0.35, -14),
+      new THREE.Vector3(-1.8, 0.35, -30),
+      new THREE.Vector3(-8, 0.35, -30),
+      new THREE.Vector3(-18, 0.35, -30),
+      new THREE.Vector3(-26, 0.35, -28),
+      new THREE.Vector3(-26, 0.35, -14),
+      new THREE.Vector3(-26, 0.35, 0),
+      new THREE.Vector3(-26, 0.35, 14),
+      new THREE.Vector3(-26, 0.35, 28),
+      new THREE.Vector3(-16, 0.35, 30),
+      new THREE.Vector3(-6, 0.35, 30),
     ],
-    // East-West cross boulevard (Voje Dulića)
+    // Route 3: Cross Boulevard (Voje Dulića - Center Alley at z = 5.0 between architectural blocks)
     [
-      new THREE.Vector3(-28, 0.35, 1.8),
-      new THREE.Vector3(-12, 0.35, 1.8),
-      new THREE.Vector3(0, 0.35, 1.8),
-      new THREE.Vector3(14, 0.35, 1.8),
-      new THREE.Vector3(28, 0.35, 1.8),
-      new THREE.Vector3(28, 0.35, 14),
-      new THREE.Vector3(14, 0.35, 24),
-      new THREE.Vector3(-14, 0.35, 24),
-      new THREE.Vector3(-28, 0.35, 14),
+      new THREE.Vector3(-26, 0.35, 5.0),
+      new THREE.Vector3(-14, 0.35, 5.0),
+      new THREE.Vector3(-4, 0.35, 5.0),
+      new THREE.Vector3(0, 0.35, 5.0),
+      new THREE.Vector3(4, 0.35, 5.0),
+      new THREE.Vector3(14, 0.35, 5.0),
+      new THREE.Vector3(26, 0.35, 5.0),
+      new THREE.Vector3(26, 0.35, 16),
+      new THREE.Vector3(26, 0.35, 29),
+      new THREE.Vector3(14, 0.35, 30),
+      new THREE.Vector3(0, 0.35, 30),
+      new THREE.Vector3(-14, 0.35, 30),
+      new THREE.Vector3(-26, 0.35, 29),
+      new THREE.Vector3(-26, 0.35, 16),
     ],
   ];
 
@@ -64,7 +80,11 @@ export class TrafficSystem {
     this.spawnVehicles();
   }
 
-  private createVehicleModel(type: 'sedan' | 'taxi' | 'suv' | 'sports', color: number): { group: THREE.Group; wheels: THREE.Mesh[]; lights: THREE.SpotLight[] } {
+  private createVehicleModel(type: 'sedan' | 'taxi' | 'suv' | 'sports', color: number): {
+    group: THREE.Group;
+    wheels: THREE.Mesh[];
+    lights: THREE.SpotLight[];
+  } {
     const carGroup = new THREE.Group();
     const wheels: THREE.Mesh[] = [];
     const lights: THREE.SpotLight[] = [];
@@ -184,7 +204,7 @@ export class TrafficSystem {
       this.vehicles.push({
         mesh: group,
         type,
-        speed: 4.5 + Math.random() * 2.5, // m/s
+        speed: 4.5 + Math.random() * 2.5,
         currentWaypointIndex: startWpIndex,
         path,
         wheels,
@@ -194,28 +214,76 @@ export class TrafficSystem {
   }
 
   public update(delta: number, playerPos: THREE.Vector3) {
+    const now = performance.now();
+
     this.vehicles.forEach((v) => {
       const currentTarget = v.path[(v.currentWaypointIndex + 1) % v.path.length];
       const dir = new THREE.Vector3().subVectors(currentTarget, v.mesh.position);
       dir.y = 0;
       const dist = dir.length();
 
-      // Check distance to player (slow down or stop if player is directly ahead)
+      // Check distance to player
       const distToPlayer = v.mesh.position.distanceTo(playerPos);
       let effectiveSpeed = v.speed;
-      if (distToPlayer < 3.2) {
-        effectiveSpeed = 0.5; // slow down for pedestrian player!
+
+      // 1. Direct Physical Collision / Impact with Player (< 1.45m)
+      if (distToPlayer < 1.45) {
+        effectiveSpeed = 0; // Emergency brake on impact
+        if (now - this.lastCrashSoundTime > 6500) {
+          this.lastCrashSoundTime = now;
+          this.lastDriverVoiceTime = now;
+          // Impact sound + tire screech + horn + real driver crash shout (NO UI POPUP WINDOW)
+          audioDsp.playCrashImpact(v.mesh.position);
+          audioDsp.playTireScreech(v.mesh.position);
+          audioDsp.playCarHorn(v.mesh.position);
+          audioLocalizationManager.triggerCarCollision(v.mesh.position, true);
+        }
+      }
+      // 2. Realistic Near Encounter / Pedestrian in Front of Car (< 2.8m)
+      else if (distToPlayer < 2.8) {
+        effectiveSpeed = 0.45; // Slow down cautiously
+        // Realistic driver horn & voice with 16 second cooldown (not spammy!)
+        if (now - this.lastDriverVoiceTime > 16000) {
+          this.lastDriverVoiceTime = now;
+          audioDsp.playCarHorn(v.mesh.position);
+          audioLocalizationManager.triggerCarCollision(v.mesh.position, false);
+        }
+      }
+
+      // Spatial Car Engine Sound Hook: trigger spatial engine rumble if near player
+      if (distToPlayer < 22 && Math.random() < 0.08) {
+        audioDsp.playSpatialCarEngine(v.mesh.position, playerPos, effectiveSpeed);
       }
 
       if (dist < 0.6) {
         v.currentWaypointIndex = (v.currentWaypointIndex + 1) % v.path.length;
       } else {
         dir.normalize();
-        v.mesh.position.addScaledVector(dir, effectiveSpeed * delta);
 
-        // Orient vehicle towards movement direction (smooth steering)
+        // Safety steering: verify forward ray doesn't intersect building boxes
+        const nextPos = v.mesh.position.clone().addScaledVector(dir, effectiveSpeed * delta);
+        let safeToMove = true;
+        for (const b of CITY_BUILDING_BOXES) {
+          if (
+            nextPos.x >= b.minX - 0.8 &&
+            nextPos.x <= b.maxX + 0.8 &&
+            nextPos.z >= b.minZ - 0.8 &&
+            nextPos.z <= b.maxZ + 0.8
+          ) {
+            safeToMove = false;
+            // Advance waypoint to steer around
+            v.currentWaypointIndex = (v.currentWaypointIndex + 1) % v.path.length;
+            break;
+          }
+        }
+
+        if (safeToMove) {
+          v.mesh.position.copy(nextPos);
+        }
+
+        // Orient vehicle towards movement direction (smooth steering interpolation)
         const targetAngle = Math.atan2(dir.x, dir.z);
-        v.mesh.rotation.y = THREE.MathUtils.lerp(v.mesh.rotation.y, targetAngle, 0.1);
+        v.mesh.rotation.y = THREE.MathUtils.lerp(v.mesh.rotation.y, targetAngle, 0.12);
 
         // Spin wheels
         v.wheels.forEach((w) => {

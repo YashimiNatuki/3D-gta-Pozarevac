@@ -36,6 +36,7 @@ import {
   ChevronDown,
   ChevronUp,
   Video,
+  Film,
   FileText,
   Globe,
   FolderOpen,
@@ -51,6 +52,7 @@ import { DynamicMission, TurfZone } from '../services/dynamicMissionEngine';
 import { TimeOfDay } from '../services/streetEconomy';
 import { PožarevacNewsTicker } from './PožarevacNewsTicker';
 import { RadioStationWidget } from './RadioStationWidget';
+import { geminiStoryEngine, StreetBanterLine } from '../services/geminiStoryEngine';
 
 export interface GtaPožarevacHudProps {
   stats: CharacterStats;
@@ -80,6 +82,7 @@ export interface GtaPožarevacHudProps {
   onOpenGoogleMaps?: () => void;
   onOpenGooglePicker?: () => void;
   onOpenMasterPlan?: () => void;
+  onOpenIntro?: () => void;
   isCctvActive?: boolean;
   onToggleCctv?: () => void;
 }
@@ -112,6 +115,7 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
   onOpenGoogleMaps,
   onOpenGooglePicker,
   onOpenMasterPlan,
+  onOpenIntro,
   isCctvActive = false,
   onToggleCctv,
 }) => {
@@ -150,6 +154,18 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
 
   // Modal za nadogradnju osobina
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Prečica na tastaturi [V] za dobacivanje prolaznicima na srpskom
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'v' || e.key === 'V') {
+        geminiStoryEngine.triggerPlayerShout(playerPos, getCurrentStreetName());
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [playerPos, nearPoi]);
 
   // Geografske koordinate Požarevca (44.6199° N, 21.1865° E)
   const latDisplay = (44.6199 + playerPos.z * 0.0001).toFixed(4);
@@ -343,6 +359,20 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
       {/* CENTRALNA DOCK TRAKA: RESPONSIVNA, KOMPAKTNA, BEZ SCROLLBARA */}
       {/* ========================================================= */}
       <div className="pointer-events-auto absolute bottom-10 left-1/2 -translate-x-1/2 z-30 font-mono select-none flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 bg-slate-900/95 backdrop-blur-2xl px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl border border-slate-700/80 shadow-2xl max-w-[96vw]">
+        {onOpenIntro && (
+          <button
+            onClick={() => {
+              onOpenIntro();
+              audioDsp.playRotateTick();
+            }}
+            className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:brightness-110 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-pink-500/25 shrink-0"
+            title="Pogledaj Uvodnu Špicu Igrice (Veo 3 AI Video / Trailer)"
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">ŠPICA</span>
+          </button>
+        )}
+
         {onOpenPhone && (
           <button
             onClick={() => {
@@ -454,6 +484,18 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
             <span className="hidden md:inline">XP PLAN</span>
           </button>
         )}
+
+        {/* Dugme za Dobacivanje na Srpskom */}
+        <button
+          onClick={() => {
+            geminiStoryEngine.triggerPlayerShout(playerPos, getCurrentStreetName());
+          }}
+          className="px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-red-500 hover:brightness-110 text-slate-950 font-black text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-rose-500/30 shrink-0"
+          title="Dobaci prolaznicima na srpskom jeziku (Prečica: Taster [V])"
+        >
+          <Volume2 className="w-3.5 h-3.5 text-slate-950" />
+          <span>DOBACI [V]</span>
+        </button>
 
         {/* Doba Dana Kompaktna Dugmad */}
         <div className="h-4 w-px bg-slate-700 mx-0.5 shrink-0 hidden sm:block" />

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
+import { geminiStoryEngine } from './geminiStoryEngine';
+import { audioLocalizationManager } from './audioLocalizationManager';
 
 export interface StreetDog {
   group: THREE.Group;
@@ -34,6 +36,13 @@ export interface Pedestrian {
   path: THREE.Vector3[];
   waypointIndex: number;
   speed: number;
+  name: string;
+  mood: 'chill' | 'shocked' | 'hyped' | 'curious';
+  overheadBubble: THREE.Mesh;
+  bubbleCanvas: HTMLCanvasElement;
+  bubbleTexture: THREE.CanvasTexture;
+  lastMoodChangeTime: number;
+  lastSpokenTime: number;
 }
 
 export class PoliceAndDogsSystem {
@@ -315,10 +324,11 @@ export class PoliceAndDogsSystem {
     }
   }
 
-  // --- 3. PEDESTRIANS ON SIDEWALKS ---
+  // --- 3. PEDESTRIANS ON SIDEWALKS WITH MOOD BUBBLES ---
   private spawnPedestrians() {
     const pedConfigs = [
       {
+        name: 'Milan (Tabačka)',
         color: 0x0284c7,
         path: [
           new THREE.Vector3(2.5, 0, -18),
@@ -327,6 +337,7 @@ export class PoliceAndDogsSystem {
         ],
       },
       {
+        name: 'Jelena (Korzo)',
         color: 0xec4899,
         path: [
           new THREE.Vector3(-3.5, 0, 12),
@@ -335,6 +346,7 @@ export class PoliceAndDogsSystem {
         ],
       },
       {
+        name: 'Goran (Čačalica)',
         color: 0x10b981,
         path: [
           new THREE.Vector3(8, 0, -3),
@@ -343,6 +355,7 @@ export class PoliceAndDogsSystem {
         ],
       },
       {
+        name: 'Bane (Centar)',
         color: 0xf59e0b,
         path: [
           new THREE.Vector3(-10, 0, 6),
@@ -380,17 +393,79 @@ export class PoliceAndDogsSystem {
       rightLeg.position.set(0.1, 0.3, 0);
       pedGroup.add(leftLeg, rightLeg);
 
+      // Overhead Mood & Emote Speech Bubble Billboard
+      const bubbleCanvas = document.createElement('canvas');
+      bubbleCanvas.width = 256;
+      bubbleCanvas.height = 96;
+      const bubbleTexture = new THREE.CanvasTexture(bubbleCanvas);
+      const bubbleMat = new THREE.MeshBasicMaterial({
+        map: bubbleTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+      });
+      const overheadBubble = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.35, 0.52),
+        bubbleMat
+      );
+      overheadBubble.position.set(0, 1.85, 0);
+      overheadBubble.visible = false;
+      pedGroup.add(overheadBubble);
+
       this.scene.add(pedGroup);
 
-      this.pedestrians.push({
+      const pedItem: Pedestrian = {
         group: pedGroup,
         legs: [leftLeg, rightLeg],
         arms: [],
         path: cfg.path,
         waypointIndex: 0,
         speed: 1.4,
-      });
+        name: cfg.name,
+        mood: 'chill',
+        overheadBubble,
+        bubbleCanvas,
+        bubbleTexture,
+        lastMoodChangeTime: 0,
+        lastSpokenTime: 0,
+      };
+
+      this.renderPedestrianBubble(pedItem, '🕶️', 'Bratina!', '#0284c7');
+      this.pedestrians.push(pedItem);
     });
+  }
+
+  public renderPedestrianBubble(
+    ped: Pedestrian,
+    emoji: string,
+    text: string,
+    accentColor: string
+  ) {
+    const ctx = ped.bubbleCanvas.getContext('2d');
+    if (!ctx) return;
+    const w = ped.bubbleCanvas.width;
+    const h = ped.bubbleCanvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Bubble background badge
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.beginPath();
+    ctx.roundRect(4, 4, w - 8, h - 8, 14);
+    ctx.fill();
+
+    // Accent border
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Emote & Text
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${emoji} ${text}`, w / 2, h / 2);
+
+    ped.bubbleTexture.needsUpdate = true;
   }
 
   // --- 4. UPDATE LOOP ---
@@ -400,10 +475,18 @@ export class PoliceAndDogsSystem {
     // Sync active hot pursuit police cruisers based on wantedLevel
     this.syncPursuitCruisers(wantedLevel, playerPos);
 
-    // Audio sirens during pursuit
-    if (wantedLevel > 0 && now - this.lastSirenSoundTime > 3200) {
-      this.lastSirenSoundTime = now;
-      audioDsp.playPoliceSirenSound();
+    // Audio sirens only during high-stakes pursuit (Wanted Level 3+) with distance attenuation
+    if (wantedLevel >= 3 && now - this.lastSirenSoundTime > 8500) {
+      // Find closest pursuit cruiser distance
+      let minDist = 999;
+      this.pursuitCruisers.forEach((c) => {
+        const d = c.group.position.distanceTo(playerPos);
+        if (d < minDist) minDist = d;
+      });
+      if (minDist < 35) {
+        this.lastSirenSoundTime = now;
+        audioDsp.playPoliceSirenSound(minDist);
+      }
     }
 
     // 1. Update Dogs
@@ -549,6 +632,35 @@ export class PoliceAndDogsSystem {
       const legSwing = Math.sin(now * 0.007 + pIdx) * 0.4;
       ped.legs[0].rotation.x = legSwing;
       ped.legs[1].rotation.x = -legSwing;
+
+      // Do not display billboard popup windows for banter/shouts
+      ped.overheadBubble.visible = false;
+
+      // Proximity & collision-based NPC interaction with REAL VOICE (no UI popups!)
+      const distToPlayer = ped.group.position.distanceTo(playerPos);
+
+      // 1. Direct collision / bump into pedestrian (< 1.25m)
+      if (distToPlayer < 1.25) {
+        if (now - ped.lastSpokenTime > 7500) {
+          ped.lastSpokenTime = now;
+          audioDsp.playPedestrianBump(ped.group.position);
+          audioLocalizationManager.triggerPedestrianCollision(ped.group.position);
+        }
+      }
+      // 2. High-wanted pursuit reaction (Wanted Level > 0)
+      else if (distToPlayer < 4.2 && wantedLevel > 0) {
+        if (now - ped.lastSpokenTime > 8000) {
+          ped.lastSpokenTime = now;
+          audioLocalizationManager.playLocalizedSerbian('Beži rođo, evo murije!', ped.group.position, { emotion: 'shout' });
+        }
+      }
+      // 3. Occasional casual street pass-by voice (moderate frequency, 20s cooldown)
+      else if (distToPlayer < 3.2) {
+        if (now - ped.lastSpokenTime > 20000) {
+          ped.lastSpokenTime = now;
+          audioLocalizationManager.triggerRandomNpcBanter(ped.group.position);
+        }
+      }
     });
   }
 

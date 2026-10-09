@@ -3,6 +3,25 @@ import { audioDsp } from './audioDsp';
 
 export type WeatherState = 'Clear' | 'Rain' | 'Cyber-Storm' | 'Cyber-Fog';
 
+export interface SceneObstacleBox {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  height: number;
+}
+
+export const CITY_BUILDING_BOXES: SceneObstacleBox[] = [
+  { minX: -11.5, maxX: -6.5, minZ: -25, maxZ: -11, height: 10 },
+  { minX: -11.5, maxX: -6.5, minZ: -9, maxZ: 3, height: 14 },
+  { minX: -11.5, maxX: -6.5, minZ: 7, maxZ: 21, height: 11 },
+  { minX: 6.5, maxX: 11.5, minZ: -25, maxZ: -11, height: 12 },
+  { minX: 6.5, maxX: 11.5, minZ: -9, maxZ: 3, height: 15 },
+  { minX: 6.5, maxX: 11.5, minZ: 7, maxZ: 21, height: 10 },
+  { minX: -22, maxX: -14, minZ: -20, maxZ: -10, height: 9 },
+  { minX: 14, maxX: 22, minZ: -20, maxZ: -10, height: 11 },
+];
+
 export interface WeatherProfile {
   name: string;
   serbianName: string;
@@ -17,7 +36,7 @@ export interface WeatherProfile {
   fogColor: number;
   fogDensity: number;
   rainDensity: number;
-  roadWetness: number; // 0 (dry) to 1 (wet reflective)
+  roadWetness: number;
   hasLightning: boolean;
 }
 
@@ -25,11 +44,11 @@ export const WEATHER_PROFILES: Record<WeatherState, WeatherProfile> = {
   Clear: {
     name: 'Clear',
     serbianName: 'Sunčano (Čisto Nebo)',
-    skyTopColor: 0x1e3a8a,      // Deep azure blue
-    skyBottomColor: 0x93c5fd,   // Light horizon blue
+    skyTopColor: 0x1e3a8a,
+    skyBottomColor: 0x93c5fd,
     ambientColor: 0x94a3b8,
     ambientIntensity: 0.55,
-    sunColor: 0xfff7ed,         // Warm golden sun
+    sunColor: 0xfff7ed,
     sunIntensity: 1.15,
     hemiSkyColor: 0xbfdbfe,
     hemiGroundColor: 0x1e293b,
@@ -42,35 +61,35 @@ export const WEATHER_PROFILES: Record<WeatherState, WeatherProfile> = {
   Rain: {
     name: 'Rain',
     serbianName: 'Kišna Oluja (Mokar Asfalt)',
-    skyTopColor: 0x0f172a,      // Gunmetal slate
-    skyBottomColor: 0x334155,   // Overcast storm horizon
+    skyTopColor: 0x0f172a,
+    skyBottomColor: 0x334155,
     ambientColor: 0x475569,
     ambientIntensity: 0.45,
-    sunColor: 0x94a3b8,         // Diffuse silver storm sun
+    sunColor: 0x94a3b8,
     sunIntensity: 0.75,
     hemiSkyColor: 0x64748b,
     hemiGroundColor: 0x1e293b,
     fogColor: 0x1e293b,
     fogDensity: 0.015,
     rainDensity: 1.0,
-    roadWetness: 0.4,
+    roadWetness: 0.5,
     hasLightning: false,
   },
   'Cyber-Storm': {
     name: 'Cyber-Storm',
     serbianName: 'Kibernetička Oluja (Ljubičaste Munje)',
-    skyTopColor: 0x3b0764,      // Electric purple
-    skyBottomColor: 0x701a75,   // Neon magenta horizon
+    skyTopColor: 0x3b0764,
+    skyBottomColor: 0x701a75,
     ambientColor: 0x581c87,
     ambientIntensity: 0.5,
-    sunColor: 0xd946ef,         // Fuchsia electric storm light
+    sunColor: 0xd946ef,
     sunIntensity: 0.85,
     hemiSkyColor: 0xa855f7,
     hemiGroundColor: 0x2e1065,
     fogColor: 0x3b0764,
     fogDensity: 0.02,
-    rainDensity: 0.7,
-    roadWetness: 0.35,
+    rainDensity: 0.8,
+    roadWetness: 0.45,
     hasLightning: true,
   },
   'Cyber-Fog': {
@@ -80,7 +99,7 @@ export const WEATHER_PROFILES: Record<WeatherState, WeatherProfile> = {
     skyBottomColor: 0x0f172a,
     ambientColor: 0x1e293b,
     ambientIntensity: 0.4,
-    sunColor: 0x06b6d4,         // Cyan neon glow
+    sunColor: 0x06b6d4,
     sunIntensity: 0.7,
     hemiSkyColor: 0x0891b2,
     hemiGroundColor: 0x020617,
@@ -92,9 +111,6 @@ export const WEATHER_PROFILES: Record<WeatherState, WeatherProfile> = {
   },
 };
 
-/**
- * Creates dynamic skybox canvas gradient texture.
- */
 export function createSkyboxTexture(topHex: number, bottomHex: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -112,7 +128,6 @@ export function createSkyboxTexture(topHex: number, bottomHex: number): THREE.Ca
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Subtle clouds & atmosphere dust
   for (let i = 0; i < 40; i++) {
     const cx = Math.random() * 512;
     const cy = 200 + Math.random() * 150;
@@ -128,11 +143,129 @@ export function createSkyboxTexture(topHex: number, bottomHex: number): THREE.Ca
   return texture;
 }
 
+// =========================================================================
+// CUSTOM SHADER DEFINITIONS FOR CUSTOM BUFFERGEOMETRY RAINFALL SYSTEM
+// Zero cube artifacts, aerodynamic vertical point streaks, custom alpha blending
+// =========================================================================
+
+const RAIN_VERTEX_SHADER = `
+  uniform float uTime;
+  uniform float uFallSpeed;
+  uniform float uHeightCeiling;
+  uniform vec3 uPlayerPos;
+  uniform float uRadius;
+
+  attribute float aVelocity;
+  attribute float aLength;
+  attribute float aSeed;
+  attribute float aCollisionHeight;
+
+  varying float vAlpha;
+  varying float vCollisionDist;
+
+  void main() {
+    float totalHeight = uHeightCeiling - aCollisionHeight;
+    float fallSpeed = aVelocity * uFallSpeed;
+    float fallOffset = mod(uTime * fallSpeed + aSeed * totalHeight, totalHeight);
+    float currentY = uHeightCeiling - fallOffset;
+
+    // Center rain volume dynamically on the moving player
+    vec3 worldPos = position;
+    worldPos.x = uPlayerPos.x + mod(position.x - uPlayerPos.x + uRadius * 0.5, uRadius) - uRadius * 0.5;
+    worldPos.z = uPlayerPos.z + mod(position.z - uPlayerPos.z + uRadius * 0.5, uRadius) - uRadius * 0.5;
+    worldPos.y = currentY;
+
+    vCollisionDist = currentY - aCollisionHeight;
+
+    // Atmospheric fade: soft fade in at clouds, smooth fade out at impact surface
+    float spawnFade = smoothstep(uHeightCeiling, uHeightCeiling - 4.0, currentY);
+    float impactFade = smoothstep(0.0, 0.8, vCollisionDist);
+    vAlpha = spawnFade * impactFade;
+
+    vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+
+    // Point size with camera distance perspective scaling
+    gl_PointSize = (aLength * 70.0) / -mvPosition.z;
+    gl_PointSize = clamp(gl_PointSize, 2.0, 36.0);
+  }
+`;
+
+const RAIN_FRAGMENT_SHADER = `
+  uniform vec3 uColor;
+  uniform float uAlpha;
+
+  varying float vAlpha;
+  varying float vCollisionDist;
+
+  void main() {
+    // Aerodynamic vertical raindrop streak geometry inside point sprite
+    float dx = abs(gl_PointCoord.x - 0.5) * 2.0;
+    float dy = gl_PointCoord.y;
+
+    // Smooth horizontal Gaussian droplet body (no cubes, soft anti-aliased edges)
+    float xShape = exp(-dx * dx * 7.5);
+
+    // Vertical elongation with bright droplet core at the leading bottom edge
+    float yShape = smoothstep(0.0, 0.82, dy) * smoothstep(1.0, 0.82, dy * 0.98);
+
+    float streak = xShape * (0.25 + 0.75 * yShape);
+    if (streak < 0.02) discard;
+
+    // Custom alpha blending
+    gl_FragColor = vec4(uColor, streak * vAlpha * uAlpha);
+  }
+`;
+
+// Dynamic Puddle Splash Ripple Ring Shader for terrain mesh
+const PUDDLE_RIPPLE_VERTEX = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const PUDDLE_RIPPLE_FRAGMENT = `
+  uniform float uProgress;
+  uniform vec3 uColor;
+  varying vec2 vUv;
+
+  void main() {
+    vec2 center = vUv - vec2(0.5);
+    float dist = length(center) * 2.0; // 0.0 at center, 1.0 at ring border
+
+    // Expanding wavefront equation
+    float ringRadius = uProgress;
+    float ringWidth = 0.18 * (1.0 - uProgress * 0.4);
+    float wave = exp(-pow((dist - ringRadius) / ringWidth, 2.0));
+
+    // Outer subtle secondary ripple
+    float secondary = 0.4 * exp(-pow((dist - ringRadius * 0.7) / (ringWidth * 1.2), 2.0));
+    float totalWave = wave + secondary;
+
+    // Fade out over lifetime
+    float alpha = totalWave * (1.0 - uProgress) * 0.85;
+    if (alpha < 0.01) discard;
+
+    gl_FragColor = vec4(uColor, alpha);
+  }
+`;
+
+interface SplashEntity {
+  x: number;
+  y: number;
+  z: number;
+  progress: number;
+  speed: number;
+  active: boolean;
+}
+
 export class WeatherManager {
   public currentState: WeatherState = 'Clear';
   public isAutoTransitionEnabled = true;
   private autoTimer: number | null = null;
-  private transitionDuration = 3.0; // Seconds for smooth transition
+  private transitionDuration = 3.0;
   private transitionProgress = 1.0;
   private fromProfile: WeatherProfile = WEATHER_PROFILES.Clear;
   private toProfile: WeatherProfile = WEATHER_PROFILES.Clear;
@@ -144,12 +277,24 @@ export class WeatherManager {
   private sunLight: THREE.DirectionalLight;
   private fillLight: THREE.DirectionalLight;
   private skyDomeMesh: THREE.Mesh;
-  private rainParticles: THREE.Points;
+
+  // Custom Shader Rain Particle System
+  private rainPoints: THREE.Points | null = null;
   private rainGeometry: THREE.BufferGeometry;
-  private rainPositions: Float32Array;
+  private rainMaterial: THREE.ShaderMaterial;
+  private rainCount = 2800;
+  private elapsedTime = 0;
+
+  // Terrain Mesh Puddle Splashes
+  private splashMesh: THREE.InstancedMesh | null = null;
+  private splashPool: SplashEntity[] = [];
+  private splashCount = 120;
+  private splashMaterial: THREE.ShaderMaterial;
+  private dummyObj = new THREE.Object3D();
+  private lastSplashSpawn = 0;
+
   private lightningLight: THREE.PointLight;
   private terrainMat?: THREE.MeshStandardMaterial;
-
   private onStateChangeCallback?: (state: WeatherState) => void;
 
   constructor(
@@ -165,7 +310,7 @@ export class WeatherManager {
     this.sunLight = sunLight;
     this.fillLight = fillLight;
 
-    // 1. Procedural 3D Sky Dome Mesh (Inverted Sphere)
+    // 1. Procedural 3D Sky Dome Mesh
     const skyGeo = new THREE.SphereGeometry(280, 32, 16);
     const skyMat = new THREE.MeshBasicMaterial({
       map: createSkyboxTexture(WEATHER_PROFILES.Clear.skyTopColor, WEATHER_PROFILES.Clear.skyBottomColor),
@@ -175,39 +320,128 @@ export class WeatherManager {
     this.skyDomeMesh = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(this.skyDomeMesh);
 
-    // 2. High-Performance Falling Rain Particles
-    const rainCount = 2800;
+    // 2. Custom BufferGeometry Rainfall Particle System with Custom Shader
     this.rainGeometry = new THREE.BufferGeometry();
-    this.rainPositions = new Float32Array(rainCount * 3);
+    const positions = new Float32Array(this.rainCount * 3);
+    const velocities = new Float32Array(this.rainCount);
+    const lengths = new Float32Array(this.rainCount);
+    const seeds = new Float32Array(this.rainCount);
+    const collisionHeights = new Float32Array(this.rainCount);
 
-    for (let i = 0; i < rainCount; i++) {
-      this.rainPositions[i * 3] = (Math.random() - 0.5) * 80;
-      this.rainPositions[i * 3 + 1] = Math.random() * 40;
-      this.rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+    const radius = 65.0;
+    for (let i = 0; i < this.rainCount; i++) {
+      const rx = (Math.random() - 0.5) * radius;
+      const ry = Math.random() * 36.0;
+      const rz = (Math.random() - 0.5) * radius;
+
+      positions[i * 3] = rx;
+      positions[i * 3 + 1] = ry;
+      positions[i * 3 + 2] = rz;
+
+      velocities[i] = 1.0 + Math.random() * 0.45; // Speed multiplier
+      lengths[i] = 0.75 + Math.random() * 0.6;   // Streak length
+      seeds[i] = Math.random();
+      collisionHeights[i] = this.getCollisionHeight(rx, rz);
     }
-    this.rainGeometry.setAttribute('position', new THREE.BufferAttribute(this.rainPositions, 3));
 
-    const rainMat = new THREE.PointsMaterial({
-      color: 0x93c5fd,
-      size: 0.22,
+    this.rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.rainGeometry.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 1));
+    this.rainGeometry.setAttribute('aLength', new THREE.BufferAttribute(lengths, 1));
+    this.rainGeometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+    this.rainGeometry.setAttribute('aCollisionHeight', new THREE.BufferAttribute(collisionHeights, 1));
+
+    this.rainMaterial = new THREE.ShaderMaterial({
+      vertexShader: RAIN_VERTEX_SHADER,
+      fragmentShader: RAIN_FRAGMENT_SHADER,
+      uniforms: {
+        uTime: { value: 0 },
+        uFallSpeed: { value: 34.0 },
+        uHeightCeiling: { value: 36.0 },
+        uPlayerPos: { value: new THREE.Vector3() },
+        uRadius: { value: radius },
+        uColor: { value: new THREE.Color(0xa5c9eb) },
+        uAlpha: { value: 0.0 },
+      },
       transparent: true,
-      opacity: 0.75,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    this.rainParticles = new THREE.Points(this.rainGeometry, rainMat);
-    this.rainParticles.visible = false;
-    this.scene.add(this.rainParticles);
 
-    // 3. Lightning Strobe Point Light for Cyber-Storm
+    this.rainPoints = new THREE.Points(this.rainGeometry, this.rainMaterial);
+    this.rainPoints.visible = false;
+    this.scene.add(this.rainPoints);
+
+    // 3. Terrain Puddle Splash Ripples with Custom Waveform Shader
+    const rippleGeo = new THREE.PlaneGeometry(1.2, 1.2);
+    rippleGeo.rotateX(-Math.PI / 2);
+
+    this.splashMaterial = new THREE.ShaderMaterial({
+      vertexShader: PUDDLE_RIPPLE_VERTEX,
+      fragmentShader: PUDDLE_RIPPLE_FRAGMENT,
+      uniforms: {
+        uProgress: { value: 0.0 },
+        uColor: { value: new THREE.Color(0x93c5fd) },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    this.splashMesh = new THREE.InstancedMesh(rippleGeo, this.splashMaterial, this.splashCount);
+    this.splashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.splashMesh.visible = false;
+
+    for (let i = 0; i < this.splashCount; i++) {
+      this.splashPool.push({
+        x: 0,
+        y: 0,
+        z: 0,
+        progress: 1.0,
+        speed: 2.2 + Math.random() * 0.8,
+        active: false,
+      });
+      this.dummyObj.position.set(0, -999, 0);
+      this.dummyObj.updateMatrix();
+      this.splashMesh.setMatrixAt(i, this.dummyObj.matrix);
+    }
+    this.splashMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.splashMesh);
+
+    // 4. Lightning Strobe Point Light
     this.lightningLight = new THREE.PointLight(0xf0abfc, 0, 120);
     this.lightningLight.position.set(0, 35, 0);
     this.scene.add(this.lightningLight);
 
     // Initial weather state
     this.setWeather('Clear', false);
-
-    // Start periodic weather transitions (every 60 seconds)
     this.startPeriodicCycle();
+  }
+
+  public triggerSplash(x: number, y: number, z: number) {
+    const splash = this.splashPool.find((s) => !s.active);
+    if (!splash) return;
+
+    splash.x = x;
+    splash.y = y + 0.02; // Prevents z-fighting with asphalt
+    splash.z = z;
+    splash.progress = 0.05;
+    splash.speed = 2.4 + Math.random() * 0.8;
+    splash.active = true;
+  }
+
+  public getCollisionHeight(x: number, z: number): number {
+    for (let b of CITY_BUILDING_BOXES) {
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
+        return b.height;
+      }
+    }
+    if ((x >= -6.25 && x <= -2.75) || (x >= 2.75 && x <= 6.25)) {
+      if (z >= -34 && z <= 34) {
+        return 0.18; // Sidewalk curb
+      }
+    }
+    return 0.02; // Ground asphalt
   }
 
   public setOnStateChange(cb: (state: WeatherState) => void) {
@@ -256,13 +490,11 @@ export class WeatherManager {
   }
 
   private applyInstantProfile(p: WeatherProfile) {
-    // Sky Dome Texture Update
     const skyMat = this.skyDomeMesh.material as THREE.MeshBasicMaterial;
     if (skyMat.map) skyMat.map.dispose();
     skyMat.map = createSkyboxTexture(p.skyTopColor, p.skyBottomColor);
     skyMat.needsUpdate = true;
 
-    // Lights
     this.ambientLight.color.setHex(p.ambientColor);
     this.ambientLight.intensity = p.ambientIntensity;
 
@@ -272,16 +504,21 @@ export class WeatherManager {
     this.sunLight.color.setHex(p.sunColor);
     this.sunLight.intensity = p.sunIntensity;
 
-    // Fog
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.setHex(p.fogColor);
       this.scene.fog.density = p.fogDensity;
     }
 
-    // Rain Visibility
-    this.rainParticles.visible = p.rainDensity > 0;
+    const isRaining = p.rainDensity > 0;
+    if (this.rainPoints) {
+      this.rainPoints.visible = isRaining;
+      this.rainMaterial.uniforms.uAlpha.value = p.rainDensity * 0.85;
+      this.rainMaterial.uniforms.uFallSpeed.value = this.currentState === 'Cyber-Storm' ? 44.0 : 34.0;
+    }
+    if (this.splashMesh) {
+      this.splashMesh.visible = isRaining;
+    }
 
-    // Road Wetness
     this.applyRoadWetness(p.roadWetness);
   }
 
@@ -291,18 +528,15 @@ export class WeatherManager {
     this.terrainMat.metalness = THREE.MathUtils.lerp(0.15, 0.85, wetness);
   }
 
-  /**
-   * Called every frame in ThreeCanvas animation loop.
-   */
   public update(delta: number, playerPos: THREE.Vector3) {
     const dt = Math.min(delta, 0.1);
+    this.elapsedTime += dt;
 
-    // 1. Smooth Transition Interpolation
+    // 1. Smooth Sky & Lighting Transition Interpolation
     if (this.transitionProgress < 1.0) {
       this.transitionProgress = Math.min(1.0, this.transitionProgress + dt / this.transitionDuration);
       const t = this.transitionProgress;
 
-      // Lerp Light Colors & Intensities
       const ambColor = new THREE.Color(this.fromProfile.ambientColor).lerp(
         new THREE.Color(this.toProfile.ambientColor),
         t
@@ -325,7 +559,6 @@ export class WeatherManager {
         t
       );
 
-      // Lerp Fog
       if (this.scene.fog instanceof THREE.FogExp2) {
         const fogCol = new THREE.Color(this.fromProfile.fogColor).lerp(
           new THREE.Color(this.toProfile.fogColor),
@@ -339,38 +572,64 @@ export class WeatherManager {
         );
       }
 
-      // Lerp Road Wetness
       const wetness = THREE.MathUtils.lerp(this.fromProfile.roadWetness, this.toProfile.roadWetness, t);
       this.applyRoadWetness(wetness);
 
-      // Finalize texture once transition completes
+      const rainAlpha = THREE.MathUtils.lerp(this.fromProfile.rainDensity, this.toProfile.rainDensity, t) * 0.85;
+      this.rainMaterial.uniforms.uAlpha.value = rainAlpha;
+      if (this.rainPoints) this.rainPoints.visible = rainAlpha > 0.02;
+      if (this.splashMesh) this.splashMesh.visible = rainAlpha > 0.02;
+
       if (this.transitionProgress >= 1.0) {
         this.applyInstantProfile(this.toProfile);
       }
     }
 
-    // 2. Animate Falling Rain Particles
-    if (this.rainParticles.visible) {
-      const positions = this.rainGeometry.attributes.position.array as Float32Array;
-      const count = positions.length / 3;
-      const fallSpeed = this.currentState === 'Cyber-Storm' ? 44.0 : 32.0;
+    // 2. Custom Shader Rainfall Particle Updates
+    if (this.rainPoints && this.rainPoints.visible) {
+      this.rainMaterial.uniforms.uTime.value = this.elapsedTime;
+      this.rainMaterial.uniforms.uPlayerPos.value.copy(playerPos);
 
-      for (let i = 0; i < count; i++) {
-        positions[i * 3 + 1] -= fallSpeed * dt;
-        if (positions[i * 3 + 1] <= 0.05) {
-          positions[i * 3 + 1] = 35 + Math.random() * 5;
-          // Keep rain centered around the player
-          positions[i * 3] = playerPos.x + (Math.random() - 0.5) * 65;
-          positions[i * 3 + 2] = playerPos.z + (Math.random() - 0.5) * 65;
-        }
+      // Procedural impact splash trigger on building roofs or terrain
+      const now = performance.now();
+      if (now - this.lastSplashSpawn > 22 && Math.random() < 0.38) {
+        this.lastSplashSpawn = now;
+        const splashX = playerPos.x + (Math.random() - 0.5) * 55;
+        const splashZ = playerPos.z + (Math.random() - 0.5) * 55;
+        const impactY = this.getCollisionHeight(splashX, splashZ);
+        this.triggerSplash(splashX, impactY, splashZ);
       }
-      this.rainGeometry.attributes.position.needsUpdate = true;
     }
 
-    // 3. Cyber-Storm Electric Lightning Flashes
+    // 3. Terrain Puddle Splash Ripples Updates
+    if (this.splashMesh && this.splashMesh.visible) {
+      let needsUpdate = false;
+      for (let i = 0; i < this.splashCount; i++) {
+        const s = this.splashPool[i];
+        if (s.active) {
+          s.progress += s.speed * dt * 0.7;
+          if (s.progress >= 1.0) {
+            s.active = false;
+            this.dummyObj.position.set(0, -999, 0);
+            this.dummyObj.scale.set(0, 0, 0);
+          } else {
+            this.dummyObj.position.set(s.x, s.y, s.z);
+            const scale = 0.2 + s.progress * 1.1;
+            this.dummyObj.scale.set(scale, scale, scale);
+          }
+          this.dummyObj.updateMatrix();
+          this.splashMesh.setMatrixAt(i, this.dummyObj.matrix);
+          needsUpdate = true;
+        }
+      }
+      if (needsUpdate) {
+        this.splashMesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    // 4. Cyber-Storm Lightning Strobes
     if (this.toProfile.hasLightning) {
-      if (Math.random() < 0.015) {
-        // Trigger lightning flash
+      if (Math.random() < 0.012) {
         this.lightningLight.intensity = 8.5 + Math.random() * 4;
         this.lightningLight.position.set(
           playerPos.x + (Math.random() - 0.5) * 40,
@@ -380,18 +639,22 @@ export class WeatherManager {
         audioDsp.playQuantumBurst();
         setTimeout(() => {
           this.lightningLight.intensity = 0;
-        }, 120);
+        }, 110);
       }
     }
 
-    // Center skybox on player for infinite horizon feel
+    // Sky follows player for infinite horizon feel
     this.skyDomeMesh.position.set(playerPos.x, 0, playerPos.z);
   }
 
   public dispose() {
     this.stopPeriodicCycle();
     if (this.skyDomeMesh.parent) this.skyDomeMesh.parent.remove(this.skyDomeMesh);
-    if (this.rainParticles.parent) this.rainParticles.parent.remove(this.rainParticles);
+    if (this.rainPoints && this.rainPoints.parent) this.rainPoints.parent.remove(this.rainPoints);
+    if (this.splashMesh && this.splashMesh.parent) this.splashMesh.parent.remove(this.splashMesh);
     if (this.lightningLight.parent) this.lightningLight.parent.remove(this.lightningLight);
+    this.rainGeometry.dispose();
+    this.rainMaterial.dispose();
+    this.splashMaterial.dispose();
   }
 }

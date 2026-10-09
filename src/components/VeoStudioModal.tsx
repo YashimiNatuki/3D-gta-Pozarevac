@@ -17,9 +17,14 @@ import { audioDsp } from '../services/audioDsp';
 export interface VeoStudioModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSetAsIntroVideo?: (url: string) => void;
 }
 
-export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({ isOpen, onClose }) => {
+export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({
+  isOpen,
+  onClose,
+  onSetAsIntroVideo,
+}) => {
   const [prompt, setPrompt] = useState('Cyberpunk neon holographic plant floating over a quantum grid, 4k cinematic lighting');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -28,6 +33,7 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({ isOpen, onClose 
   const [generationStep, setGenerationStep] = useState<string>('');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSetAsIntro, setIsSetAsIntro] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<number | null>(null);
@@ -283,17 +289,38 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({ isOpen, onClose 
                   aspectRatio === '9:16' ? 'max-w-[180px]' : ''
                 }`}
               />
-              <div className="flex items-center justify-between px-2 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2 pt-1">
                 <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Generisanje završeno
                 </span>
-                <a
-                  href={videoUrl}
-                  download="veo_generated_video.mp4"
-                  className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono flex items-center gap-1 transition"
-                >
-                  <Download className="w-3 h-3" /> Preuzmi MP4
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (onSetAsIntroVideo && videoUrl) {
+                        onSetAsIntroVideo(videoUrl);
+                        localStorage.setItem('gta_pozaravac_intro_video', videoUrl);
+                        setIsSetAsIntro(true);
+                        audioDsp.playTurfWarVictory();
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition shadow-md cursor-pointer ${
+                      isSetAsIntro
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950'
+                    }`}
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                    <span>{isSetAsIntro ? '✓ Postavljeno kao Špica!' : '🎬 Postavi kao Špicu'}</span>
+                  </button>
+
+                  <a
+                    href={videoUrl}
+                    download="veo_generated_video.mp4"
+                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono flex items-center gap-1 transition"
+                  >
+                    <Download className="w-3 h-3" /> Preuzmi MP4
+                  </a>
+                </div>
               </div>
             </div>
           )}

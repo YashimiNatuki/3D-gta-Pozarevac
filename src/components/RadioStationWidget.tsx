@@ -86,6 +86,8 @@ export const RadioStationWidget: React.FC<RadioStationWidgetProps> = ({
         lofi: { top: '#10b981', bot: '#059669' },      // Emerald
         trap: { top: '#f59e0b', bot: '#ef4444' },      // Amber / Red
         news: { top: '#f43f5e', bot: '#e11d48' },      // Rose
+        ambient: { top: '#8b5cf6', bot: '#6366f1' },   // Purple / Indigo
+        binaural: { top: '#14b8a6', bot: '#06b6d4' },  // Teal / Cyan
       };
       const colors = stationColorMap[selectedStation];
 

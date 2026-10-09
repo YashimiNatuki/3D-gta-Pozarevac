@@ -4,7 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { audioDsp } from '../services/audioDsp';
+import { audioDsp, spatialSoundManager } from '../services/audioDsp';
 import { CharacterStats, Quest } from '../services/characterProgress';
 import { POŽAREVAC_POIS, PožarevacPoi } from '../services/pozaravacPoi';
 import { createPožarevacSatelliteTexture } from '../services/satelliteTexture';
@@ -130,7 +130,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.88;
     container.appendChild(renderer.domElement);
@@ -189,6 +189,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     weatherMgr.setOnStateChange((newState) => {
       if (onWeatherChange) onWeatherChange(newState);
     });
+
+    // 3D Spatial Audio Manager Factory: Bind localized ambient city noise loop relative to scene
+    spatialSoundManager.createCityNoiseLoop('central_tabacka', { x: 0, y: 1.0, z: 0 }, 0.08);
 
     // 4. CRISP HIGH-DEFINITION POŽAREVAC SATELLITE GROUND PLANE
     const terrainSize = 78;
@@ -530,6 +533,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       walkSpeed: 4.8 * (characterStats.moveSpeed || 1),
       runSpeed: 8.8 * (characterStats.moveSpeed || 1),
       jumpPower: 7.8 * (characterStats.jumpPower || 1),
+      getDynamicColliders: () => {
+        return traffic.vehicles.map((v) => ({
+          x: v.mesh.position.x,
+          z: v.mesh.position.z,
+          halfWidth: v.type === 'suv' ? 0.95 : 0.85,
+          halfDepth: v.type === 'suv' ? 1.9 : 1.75,
+          type: 'vehicle' as const,
+        }));
+      },
     });
     controller.targetDistance = 4.2;
     controller.distance = 4.2;
@@ -626,15 +638,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
     window.addEventListener('resize', onResize);
 
-    // 19. ANIMATION LOOP
-    const clock = new THREE.Clock();
+    // 19. ANIMATION LOOP (Precision performance.now timer without deprecation warnings)
+    let lastTime = performance.now();
+    let startTime = performance.now();
     let animationFrameId: number;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const delta = Math.min(clock.getDelta(), 0.1);
-      const elapsedTime = clock.getElapsedTime();
+      const currentTime = performance.now();
+      const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
+      lastTime = currentTime;
+      const elapsedTime = (currentTime - startTime) / 1000;
 
       // Update Camera based on CCTV Hacker or ThirdPersonController
       if (isCctvActiveRef.current && cctvSystemRef.current) {
@@ -654,19 +669,49 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         controller.update(delta);
       }
 
-      // Update Character Limb Animations (walk/run cycle)
+      // Update Character Limb Animations (walk/run cycle with proper jump airtime)
+      const isJumping = !controller.isGrounded;
       characterRig.updateAnimation(
         delta,
         controller.isMoving,
         controller.isSprinting,
-        controller.isGrounded
+        isJumping
       );
+
+      // Interactive Footstep Puddle Splashes in wet weather
+      if (
+        controller.isMoving &&
+        controller.isGrounded &&
+        (weatherMgr.currentState === 'Rain' || weatherMgr.currentState === 'Cyber-Storm')
+      ) {
+        if (Math.random() < 0.25) {
+          weatherMgr.triggerSplash(
+            controller.position.x + (Math.random() - 0.5) * 0.4,
+            0.02,
+            controller.position.z + (Math.random() - 0.5) * 0.4
+          );
+        }
+      }
 
       // Rotate POI core beacons
       coresList.forEach((core) => {
         core.rotation.y += delta * 1.5;
         core.rotation.x += delta * 0.7;
       });
+
+      // 3D Spatial Audio Listener tracking (PannerNode coordinates relative to camera)
+      const cameraDir = new THREE.Vector3();
+      camera.getWorldDirection(cameraDir);
+      audioDsp.updateAudioListener(
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+        cameraDir.x,
+        cameraDir.z
+      );
+
+      // Randomized Spatial Ambient City Sound Emitters (Church bells, park wind, distant horns)
+      audioDsp.updateSpatialCityAmbience(controller.position);
 
       // Update AI Traffic System (Slows down near player)
       traffic.update(delta, controller.position);
@@ -760,6 +805,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       traffic.dispose();
       policeAndDogs.dispose();
       weatherMgr.dispose();
+      spatialSoundManager.stopAll();
       composer.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) {

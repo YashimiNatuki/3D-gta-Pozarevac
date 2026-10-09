@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
+import { CITY_BUILDING_BOXES, SceneObstacleBox } from './weatherManager';
+import { PhysicsEngine } from './physicsEngine';
+
+export interface DynamicCollider {
+  x: number;
+  z: number;
+  halfWidth: number;
+  halfDepth: number;
+  type?: 'vehicle' | 'prop' | 'barrier';
+}
 
 export interface ControllerOptions {
   camera: THREE.PerspectiveCamera;
@@ -9,6 +19,7 @@ export interface ControllerOptions {
   walkSpeed?: number;
   runSpeed?: number;
   jumpPower?: number;
+  getDynamicColliders?: () => DynamicCollider[];
 }
 
 export class ThirdPersonController {
@@ -53,6 +64,13 @@ export class ThirdPersonController {
   public isOrbiting = false;
   public lastMousePos = { x: 0, y: 0 };
 
+  // Collision System
+  public getDynamicColliders: (() => DynamicCollider[]) | null = null;
+  public staticObstacles: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
+  public playerRadius = 0.45;
+  private lastCollisionSoundTime = 0;
+  public physicsEngine: PhysicsEngine;
+
   // Mode override (e.g. Inspect Close-Up or Top-Down Drone)
   public activeMode: 'gtaFollow' | 'perspective' | 'isometric' | 'topDown' | 'closeUp' = 'gtaFollow';
 
@@ -89,6 +107,37 @@ export class ThirdPersonController {
     if (opts.walkSpeed) this.walkSpeed = opts.walkSpeed;
     if (opts.runSpeed) this.runSpeed = opts.runSpeed;
     if (opts.jumpPower) this.jumpPower = opts.jumpPower;
+    if (opts.getDynamicColliders) this.getDynamicColliders = opts.getDynamicColliders;
+
+    // Initialize static Požarevac obstacle bounds (Buildings, Planters, Benches, Central Monolith)
+    this.staticObstacles = [
+      ...CITY_BUILDING_BOXES.map((b) => ({
+        minX: b.minX,
+        maxX: b.maxX,
+        minZ: b.minZ,
+        maxZ: b.maxZ,
+      })),
+      // Central Monolith
+      { minX: -1.3, maxX: 1.3, minZ: -1.3, maxZ: 1.3 },
+      // Flower Planters along Tabačka Čaršija
+      { minX: -4.3, maxX: -3.3, minZ: -18.5, maxZ: -17.5 },
+      { minX: 3.3, maxX: 4.3, minZ: -18.5, maxZ: -17.5 },
+      { minX: -4.3, maxX: -3.3, minZ: -6.5, maxZ: -5.5 },
+      { minX: 3.3, maxX: 4.3, minZ: -6.5, maxZ: -5.5 },
+      { minX: -4.3, maxX: -3.3, minZ: 5.5, maxZ: 6.5 },
+      { minX: 3.3, maxX: 4.3, minZ: 5.5, maxZ: 6.5 },
+      { minX: -4.3, maxX: -3.3, minZ: 17.5, maxZ: 18.5 },
+      { minX: 3.3, maxX: 4.3, minZ: 17.5, maxZ: 18.5 },
+      // Park and sidewalk benches
+      { minX: -4.6, maxX: -3.8, minZ: -14.9, maxZ: -13.1 },
+      { minX: -4.6, maxX: -3.8, minZ: 1.1, maxZ: 2.9 },
+      { minX: 3.8, maxX: 4.6, minZ: -14.9, maxZ: -13.1 },
+      { minX: 3.8, maxX: 4.6, minZ: 1.1, maxZ: 2.9 },
+      { minX: -9.9, maxX: -8.1, minZ: 4.6, maxZ: 5.4 },
+    ];
+
+    // Initialize Cannon.js rigid body physics engine
+    this.physicsEngine = new PhysicsEngine(this.position);
 
     // Bind event handlers
     this.boundOnKeyDown = this.onKeyDown.bind(this);
@@ -253,13 +302,87 @@ export class ThirdPersonController {
       dt
     );
 
-    // 5. Position & Bounds Clamping (Keeps player on Požarevac streets)
-    this.position.x += this.velocity.x * dt;
-    this.position.z += this.velocity.z * dt;
+    // 5. Physics Collision & Continuous Sliding Resolution
+    // Player cannot walk through buildings, vehicles, or street objects
+    const deltaX = this.velocity.x * dt;
+    const deltaZ = this.velocity.z * dt;
 
+    // Gather all active colliders (static buildings/props + dynamic vehicles)
+    const allColliders: { minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }[] = [
+      ...this.staticObstacles,
+    ];
+
+    if (this.getDynamicColliders) {
+      const dynamics = this.getDynamicColliders();
+      for (const d of dynamics) {
+        allColliders.push({
+          minX: d.x - d.halfWidth,
+          maxX: d.x + d.halfWidth,
+          minZ: d.z - d.halfDepth,
+          maxZ: d.z + d.halfDepth,
+          isVehicle: d.type === 'vehicle',
+        });
+      }
+    }
+
+    // Step X with sliding collision resolution
+    let newX = this.position.x + deltaX;
+    let hitVehicle = false;
+    for (const box of allColliders) {
+      if (
+        newX + this.playerRadius > box.minX &&
+        newX - this.playerRadius < box.maxX &&
+        this.position.z + this.playerRadius > box.minZ &&
+        this.position.z - this.playerRadius < box.maxZ
+      ) {
+        if (box.isVehicle) hitVehicle = true;
+        // Slide along X boundary
+        if (deltaX > 0) {
+          newX = box.minX - this.playerRadius - 0.002;
+          this.velocity.x = 0;
+        } else if (deltaX < 0) {
+          newX = box.maxX + this.playerRadius + 0.002;
+          this.velocity.x = 0;
+        }
+      }
+    }
+    this.position.x = newX;
+
+    // Step Z with sliding collision resolution
+    let newZ = this.position.z + deltaZ;
+    for (const box of allColliders) {
+      if (
+        this.position.x + this.playerRadius > box.minX &&
+        this.position.x - this.playerRadius < box.maxX &&
+        newZ + this.playerRadius > box.minZ &&
+        newZ - this.playerRadius < box.maxZ
+      ) {
+        if (box.isVehicle) hitVehicle = true;
+        // Slide along Z boundary
+        if (deltaZ > 0) {
+          newZ = box.minZ - this.playerRadius - 0.002;
+          this.velocity.z = 0;
+        } else if (deltaZ < 0) {
+          newZ = box.maxZ + this.playerRadius + 0.002;
+          this.velocity.z = 0;
+        }
+      }
+    }
+    this.position.z = newZ;
+
+    // Boundary clamping (within Požarevac play area)
     const terrainBound = 35.0;
     this.position.x = Math.max(-terrainBound, Math.min(terrainBound, this.position.x));
     this.position.z = Math.max(-terrainBound, Math.min(terrainBound, this.position.z));
+
+    // Vehicle collision audio feedback
+    if (hitVehicle && (Math.abs(deltaX) > 0.03 || Math.abs(deltaZ) > 0.03)) {
+      const now = Date.now();
+      if (now - this.lastCollisionSoundTime > 1800) {
+        this.lastCollisionSoundTime = now;
+        audioDsp.playCarHorn(this.position);
+      }
+    }
 
     // 6. Jump Physics & Gravity
     if (this.isJumping) {
@@ -275,6 +398,7 @@ export class ThirdPersonController {
     }
 
     this.characterGroup.position.copy(this.position);
+    this.physicsEngine.setPlayerPosition(this.position.x, this.position.y, this.position.z);
 
     // 7. Smooth Third-Person Camera Follow & Orbit
     // Target focus: Character upper torso (y + 1.35)

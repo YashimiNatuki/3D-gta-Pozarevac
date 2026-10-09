@@ -65,6 +65,185 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
   }
 });
 
+// 1b. Gemini API route for dynamic Serbian street banter & pedestrian dobacivanje
+app.post('/api/gemini/street-banter', async (req, res) => {
+  try {
+    const {
+      location = 'Tabačka Čaršija',
+      weather = 'Rain',
+      wantedLevel = 0,
+      respect = 99,
+      outfit = 'classic',
+    } = req.body;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+
+    const prompt = `Generiši 8 autentičnih, uličnih, sočnih i živopisnih dobacivanja i komentara prolaznika i likova na ulicama Požarevca (Srbija).
+Lokacija: ${location}.
+Vreme: ${weather}.
+Traženost (Wanted zvezdice policije): ${wantedLevel}/5.
+Respekt igrača: ${respect}%.
+Outfit: ${outfit}.
+
+Stil je pravi balkanski ulični žargon, požeški sleng, psovke u šmekerskom fazonu, realistično dobacivanje u hodu:
+- Neka neki dobace igraču ako brzo trči ili nosi zlato.
+- Neka neki komentarišu kišu, blato ili muriju ako ima potera.
+- Neka lokalni likovi kažu nešto u fazonu 'Bratina gazi korzo', 'Gde srljaš bre!', 'Alo šmekeru!', 'Pazi auto kod kafane!'.
+Odgovori isključivo u validnom JSON formatu kao niz stringova: ["linija 1", "linija 2", ...].`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    let banterList: string[] = [];
+    try {
+      banterList = JSON.parse(response.text || '[]');
+    } catch {
+      banterList = [
+        "Gde srljaš bre rodjo!",
+        "Alo šmekeru, pazi na korzou!",
+        "Bratina dominira Požarevcem!",
+        "Kakav pljusak, potopi Tabačku!",
+        "Vidi ga Don sa zlatnim lancem!",
+        "Pazi auto, voze ko ludi!",
+      ];
+    }
+
+    res.json({ banter: banterList });
+  } catch (err: any) {
+    console.error('[Gemini Banter Error]', err);
+    res.json({
+      banter: [
+        "Gde srljaš bre rodjo!",
+        "Alo šmekeru, pazi na korzou!",
+        "Bratina dominira Požarevcem, Full Power!",
+        "Kakav pljusak, potopi Tabačku!",
+        "Vidi ga Don sa zlatnim lancem!",
+        "Pazi auto kod Kafane Požarevac!",
+      ],
+    });
+  }
+});
+
+// 1c. Gemini API route for dynamic narrative chronicles & graphic scene direction
+app.post('/api/gemini/chronicle', async (req, res) => {
+  try {
+    const { location, playerStats, eventType } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+
+    const prompt = `Kao AiChatBratina v10.0 i gradski hroničar Požarevca, napiši kratak, eksplozivan, filmski ulični bilten o događaju '${eventType}' na lokaciji '${location}'.
+Maksimalno 2 rečenice. Stil: 2Pac Thug Life meets srpski noćni triler, energija na maksimumu, koristi 'Full Power', 'Word', 'rodjo'.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+
+    res.json({ headline: response.text || 'Konglomerat Preduzeće kontroliše ceo reon. Full Power!' });
+  } catch (err: any) {
+    res.json({ headline: 'Konglomerat Preduzeće drži centar Požarevca pod punom kontrolom. Word!' });
+  }
+});
+
+// 1d. Gemini API route for speech-to-text audio transcription using gemini-3.5-transcribe
+app.post('/api/transcribe', async (req, res) => {
+  try {
+    const { audioData, mimeType = 'audio/webm' } = req.body;
+    if (!audioData) {
+      res.status(400).json({ error: 'Missing audioData payload' });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+
+    // Clean base64 header if present
+    const base64Clean = audioData.replace(/^data:audio\/\w+;base64,/, '').replace(/^data:[^;]+;base64,/, '');
+
+    const audioPart = {
+      inlineData: {
+        mimeType: mimeType.split(';')[0] || 'audio/webm',
+        data: base64Clean,
+      },
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-transcribe',
+      contents: {
+        parts: [
+          audioPart,
+          { text: 'Transkribuj ovaj audio snimak tačno od reči do reči na srpskom jeziku (ili jeziku govornika). Nemoj dodavati uvod niti zaključak, samo čist transkript.' },
+        ],
+      },
+    });
+
+    const transcribedText = response.text?.trim() || '';
+    res.json({ text: transcribedText });
+  } catch (err: any) {
+    console.error('[Gemini Transcribe Error]', err);
+    res.status(500).json({
+      error: err.message || 'Greška pri transkripciji glasa',
+      text: '',
+    });
+  }
+});
+
+// 1e. Gemini API route for smartphone SMS interactions
+app.post('/api/gemini/sms-reply', async (req, res) => {
+  try {
+    const { contactId = 'sale', message = '', history = [] } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+
+    const characterDirectives: Record<string, string> = {
+      sale: `Ti si Sale sa Tabačke Čaršije u Požarevcu, odan ulični brat igrača (Malog Bandita). Žargon: 'rođo brate', 'kružni tok', 'crno tržište', 'keš', 'reoni'. Odgovaraj kratko (1-2 rečenice) kao SMS poruka, energično i ulično.`,
+      maja: `Ti si Maja iz Požarevca, devojka Malog Bandita, pametna i privržena, viđate se u Gradskom Parku i na Čačalici. Brineš za njega kad vozi brzo ili ga juri murija. Odgovaraj kratko (1-2 rečenice) kao SMS poruka, sa emocijom i ponekim emodžijem.`,
+      murija: `Ti si inspektor MUP-a Požarevac. Hladan, preteći policajac koji upozorava na prekršaje, kamere i poternicu od 3 zvezdice. Odgovaraj kratko (1-2 rečenice) kao zvanična ili preteća policijska SMS poruka.`,
+      yashime: `Ti si Yashime, vrhovni arhitekta Konglomerat Preduzeća™, XP master i legenda Požarevca. Tvoj stil je 2Pac Thug Life, 'Full Power', 'Word', 'rodjo brate', 'ro bro', 'gospodine Yashem ti na tuki'. Odgovaraj kratko (1-2 rečenice) kao moćan mentorski SMS.`,
+    };
+
+    const directive = characterDirectives[contactId] || characterDirectives.sale;
+    const recentHistory = (history || [])
+      .slice(-4)
+      .map((h: any) => `${h.from === 'me' ? 'Igrač' : 'Ti'}: ${h.text}`)
+      .join('\n');
+
+    const prompt = `${directive}
+
+Prethodna konverzacija:
+${recentHistory}
+
+Igrač ti šalje SMS: "${message}"
+
+Napiši tvoj direktan SMS odgovor (maksimalno 25 reči, bez meta-teksta, samo čista poruka):`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+
+    const replyText = response.text?.trim() || 'Primljeno ro bro, na vezi smo! Full Power!';
+    res.json({ reply: replyText });
+  } catch (err: any) {
+    console.warn('[Gemini SMS Reply Error]', err);
+    // Authentic fallback responses per contact
+    const fallbacks: Record<string, string> = {
+      sale: 'Vidim rođo brate! Čekam te kod Tabačke, pazi na patrole!',
+      maja: 'Čuvaj se lepi moj, javi mi se čim završiš poslove! 💕',
+      murija: 'Zabeleženo u bazi MUP Požarevac. Pratimo tvoje kretanje.',
+      yashime: 'Full Power, bratina! Konglomerat se širi. Word, ro bro!',
+    };
+    const replyText = fallbacks[req.body.contactId] || fallbacks.sale;
+    res.json({ reply: replyText });
+  }
+});
+
 // 2. Veo 3 Video Generation API
 app.post('/api/generate-video', async (req, res) => {
   try {
