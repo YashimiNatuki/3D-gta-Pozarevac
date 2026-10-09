@@ -39,6 +39,7 @@ import { MasterPlanModal } from './components/MasterPlanModal';
 import { PickedGoogleFile } from './services/googlePicker';
 import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
 import { CctvOverlay } from './components/CctvOverlay';
+import { GameIntroVideo } from './components/GameIntroVideo';
 import {
   CctvSystem,
   CctvCameraDef,
@@ -55,6 +56,7 @@ import {
 } from './services/streetEconomy';
 
 export function App() {
+  const [introDone, setIntroDone] = useState(false);
   const [score, setScore] = useState(1450);
   const [energyLevel, setEnergyLevel] = useState(78);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -546,6 +548,8 @@ export function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
+      {/* Cinematic THUG LIFE intro video (preskočiv: ESC / ?intro=0) */}
+      {!introDone && <GameIntroVideo onFinish={() => setIntroDone(true)} />}
       {/* 3D Scene Viewport: Satelitska Mapa Požarevca, AI Saobraćaj, Zgrade, Dinamičko Vreme & GTA Lik */}
       <ThreeCanvas
         cubeColor={cubeColor}
