@@ -9,7 +9,8 @@ export type MissionType =
   | 'escape_police'
   | 'dog_chase'
   | 'romance'
-  | 'turf_war';
+  | 'turf_war'
+  | 'landmark_scout';
 
 export interface MissionCharacter {
   name: string;
@@ -599,7 +600,7 @@ export class DynamicMissionEngine {
       { name: 'skrovište na Starom Korzou', x: 9, z: -4 },
       { name: 'skrovište kod Trga', x: 0, z: 0 },
     ];
-    const supportedTypes: MissionType[] = ['delivery', 'trade_flip', 'escape_police', 'turf_war', 'plant_harvest'];
+    const supportedTypes: MissionType[] = ['delivery', 'trade_flip', 'escape_police', 'turf_war', 'plant_harvest', 'landmark_scout'];
     const contestedZones = INITIAL_TURF_ZONES.filter((zone) => zone.isContested);
     const plot = INITIAL_PLANT_PLOTS.find((candidate) => candidate.id === 'plot_3');
     const radio = POŽAREVAC_MARKET_ITEMS.find((item) => item.id === 'retro_radio_cassette');
@@ -609,7 +610,7 @@ export class DynamicMissionEngine {
       const seed = currentDaySeed + i;
       const loc = locations[positiveIndex(currentDaySeed + i * 3, locations.length)];
       const type = supportedTypes[positiveIndex(seed, supportedTypes.length)];
-      const giver = type === 'turf_war' || type === 'plant_harvest' ? GANG_CHARACTERS.yashime : GANG_CHARACTERS.sale;
+      const giver = type === 'turf_war' || type === 'plant_harvest' || type === 'landmark_scout' ? GANG_CHARACTERS.yashime : GANG_CHARACTERS.sale;
       let title = '';
       let description = '';
       let locationName = loc.name;
@@ -677,6 +678,19 @@ export class DynamicMissionEngine {
           { label: 'Odbrani kontrolnu tačku', x: zone.centerCoords.x + 5, z: zone.centerCoords.z + 5 },
         ];
         requiredTimeOfDay = 'night';
+      } else if (type === 'landmark_scout') {
+        const landmark = loc.name === 'Etno Park Tulba'
+          ? { name: 'Etno Park Tulba', x: 12, z: 29, next: { name: 'Čačalica', x: 17, z: 13 } }
+          : { name: 'Čačalica', x: 17, z: 13, next: { name: 'Gradski Park', x: -11, z: 7 } };
+        title = `Izviđanje landmarka: ${landmark.name} 🗺️`;
+        description = `Obiđi novi 3D landmark ${landmark.name}, aktiviraj putokaz, zatim proveri sledeću tačku u ${landmark.next.name}.`;
+        locationName = `${landmark.name} → ${landmark.next.name}`;
+        targetCoords = { x: landmark.x, z: landmark.z };
+        checkpoints = [
+          { label: `Skeniraj landmark: ${landmark.name}`, x: landmark.x, z: landmark.z },
+          { label: `Potvrdi rutu kod: ${landmark.next.name}`, x: landmark.next.x, z: landmark.next.z },
+        ];
+        timeLimitSeconds = 600;
       } else {
         const plotCoords = plot?.coords ?? { x: 15, z: 12 };
         title = `Čačalica: zrela berba pred svitanje 🌿`;

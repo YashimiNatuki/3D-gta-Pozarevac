@@ -227,6 +227,7 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
                         {key === 'goldBoss' && 'Belo-zlatni sako, zlatni lanac, crne pantalone i patike.'}
                         {key === 'cyber2077' && 'Svetleći neon cyan vizir, noćni kargo, svetleće patike.'}
                         {key === 'redHood' && 'Krvavo crveni duks, crna bandana, tamne ulične pantalone.'}
+                        {key === 'tulbaRanger' && 'Etno neon prsluk, ranger kapa, zeleni detalji i svetleća baštenska aura.'}
                       </div>
                     </button>
                   );

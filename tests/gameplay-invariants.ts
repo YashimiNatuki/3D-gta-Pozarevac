@@ -202,7 +202,7 @@ assert.equal(getMissionCompletionBlocker(escapedThroughPark, { now: 6_100, timeO
 assert.equal(advanceMissionCheckpoint(escapedThroughPark), null);
 
 const generatedMissions = Array.from({ length: 50 }, (_, seed) => DynamicMissionEngine.generateDailyMissions(seed)).flat();
-assert.ok(generatedMissions.every((mission) => ['delivery', 'trade_flip', 'escape_police', 'turf_war', 'plant_harvest'].includes(mission.type)));
+assert.ok(generatedMissions.every((mission) => ['delivery', 'trade_flip', 'escape_police', 'turf_war', 'plant_harvest', 'landmark_scout'].includes(mission.type)));
 for (const mission of generatedMissions) {
   if (mission.type === 'delivery') assert.ok((mission.checkpoints?.length ?? 0) >= 2);
   if (mission.type === 'trade_flip') {
@@ -223,6 +223,10 @@ for (const mission of generatedMissions) {
   if (mission.type === 'plant_harvest') {
     assert.equal(mission.requiredTimeOfDay, 'dawn');
     assert.deepEqual(mission.targetCoords, { x: 15, z: 12 });
+  }
+  if (mission.type === 'landmark_scout') {
+    assert.equal(mission.checkpoints?.length, 2);
+    assert.ok(mission.locationName.includes('→'));
   }
 }
 

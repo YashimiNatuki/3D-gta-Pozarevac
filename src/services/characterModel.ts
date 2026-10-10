@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type ThugOutfitId = 'classic' | 'goldBoss' | 'cyber2077' | 'redHood';
+export type ThugOutfitId = 'classic' | 'goldBoss' | 'cyber2077' | 'redHood' | 'tulbaRanger';
 
 export interface ThugOutfitConfig {
   id: ThugOutfitId;
@@ -68,6 +68,19 @@ export const THUG_OUTFITS: Record<ThugOutfitId, ThugOutfitConfig> = {
     hatType: 'snapback',
     chainColor: 0xd97706,
     auraColor: 0xdc2626,
+  },
+  tulbaRanger: {
+    id: 'tulbaRanger',
+    name: 'Tulba Ranger — Etno Neon Scout',
+    vestColor: 0x365314,
+    shirtColor: 0x14532d,
+    pantsColor: 0x292524,
+    sneakerPrimary: 0x84cc16,
+    sneakerSecondary: 0xfef08a,
+    bandanaColor: 0x65a30d,
+    hatType: 'beanie',
+    chainColor: 0xfacc15,
+    auraColor: 0x84cc16,
   },
 };
 

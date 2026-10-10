@@ -197,7 +197,7 @@ Koordinate moraju biti u opsegu -30..30, sadržaj je fikcionalan i bez realnih u
       config: { responseMimeType: 'application/json' },
     });
     const parsed = JSON.parse(response.text || '{}');
-    const allowedTypes = new Set(['delivery', 'hit', 'escape_police', 'turf_war', 'plant_harvest', 'trade_flip']);
+    const allowedTypes = new Set(['delivery', 'hit', 'escape_police', 'turf_war', 'plant_harvest', 'trade_flip', 'landmark_scout']);
     const checkpoints = Array.isArray(parsed.checkpoints) ? parsed.checkpoints.slice(0, 4).filter((point: any) =>
       typeof point?.label === 'string' && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.z))) : [];
     if (typeof parsed.title !== 'string' || checkpoints.length < 2 || !allowedTypes.has(parsed.type)) {

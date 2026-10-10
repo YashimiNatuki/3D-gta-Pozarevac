@@ -24,6 +24,7 @@ import { CctvSystem } from '../services/cctvSystem';
 import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../services/rendererPerformance';
 import { GameDirector } from '../services/gameDirector';
+import { buildPozarevacLandmarks } from '../services/pozarevacLandmarks';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -357,6 +358,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     blockPositions.forEach((b) => createCityBuilding(b.x, b.z, b.w, b.h, b.d, b.neon, b.color));
     scene.add(buildingsGroup);
+
+    // High-detail authored landmarks: Tulba, Čačalica and cultivation micro-zones.
+    buildPozarevacLandmarks(scene);
 
     // 7. STREETLIGHTS ALONG TABAČKA ČARŠIJA
     const streetLightGroup = new THREE.Group();
