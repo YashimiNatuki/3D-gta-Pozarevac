@@ -510,21 +510,24 @@ export function reconcileMissionCatalog(
     if (!definition) return saved;
 
     const checkpoints = definition.checkpoints;
-    const checkpointIndex = saved.status === 'active' && checkpoints?.length
-      ? Math.min(Math.max(saved.checkpointIndex ?? 0, 0), checkpoints.length - 1)
-      : saved.checkpointIndex;
-    const activeCheckpoint = saved.status === 'active' && checkpoints?.length
-      ? checkpoints[checkpointIndex ?? 0]
-      : undefined;
     const expiresAt = saved.status === 'active'
       ? saved.expiresAt ?? (definition.timeLimitSeconds ? now + definition.timeLimitSeconds * 1000 : undefined)
       : saved.expiresAt;
+    const expired = saved.status === 'active' && expiresAt !== undefined && now >= expiresAt;
+    const checkpointIndex = saved.status === 'active' && !expired && checkpoints?.length
+      ? Math.min(Math.max(saved.checkpointIndex ?? 0, 0), checkpoints.length - 1)
+      : saved.checkpointIndex;
+    const activeCheckpoint = saved.status === 'active' && !expired && checkpoints?.length
+      ? checkpoints[checkpointIndex ?? 0]
+      : undefined;
     const preserveHistoricalRewards = saved.status === 'completed';
 
     return {
       ...definition,
       ...saved,
       title: definition.title,
+      status: expired ? 'failed' : saved.status,
+      failureReason: expired ? 'Vremensko ograničenje misije je isteklo tokom učitavanja.' : saved.failureReason,
       type: definition.type,
       giver: definition.giver,
       locationName: definition.locationName,

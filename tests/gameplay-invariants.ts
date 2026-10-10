@@ -252,6 +252,18 @@ assert.equal(migratedTradeMission.expiresAt, 10_000 + (canonicalTradeMission.tim
 assert.ok(migratedMissions.some((mission) => mission.id === 'dm_8'), 'new catalog missions should be appended to older saves');
 assert.match(getMissionCompletionBlocker(migratedTradeMission, { now: 10_001, timeOfDay: 'day', wantedLevel: 0 }) ?? '', /Prvo kupi/);
 
+const expiredMission = reconcileMissionCatalog([{
+  ...canonicalTradeMission,
+  status: 'active',
+  acceptedAt: 1_000,
+  expiresAt: 2_000,
+  checkpointIndex: 0,
+}], INITIAL_DYNAMIC_MISSIONS, 2_001).find((mission) => mission.id === canonicalTradeMission.id);
+assert.ok(expiredMission);
+assert.equal(expiredMission.status, 'failed');
+assert.match(expiredMission.failureReason ?? '', /isteklo/);
+assert.deepEqual(expiredMission.targetCoords, canonicalTradeMission.targetCoords);
+
 assert.match(getMissionCompletionBlocker({ ...accepted, type: 'plant_harvest' }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /uber/);
 
 assert.equal(isValidVideoOperationName('operations/abc-123_'), true);
