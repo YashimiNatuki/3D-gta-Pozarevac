@@ -201,10 +201,18 @@ Koordinate moraju biti u opsegu -30..30, sadržaj je fikcionalan i bez realnih u
     const checkpoints = Array.isArray(parsed.checkpoints) ? parsed.checkpoints.slice(0, 4).filter((point: any) =>
       typeof point?.label === 'string' && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.z))) : [];
     if (typeof parsed.title !== 'string' || checkpoints.length < 2 || !allowedTypes.has(parsed.type)) {
-      res.json({ mission: fallback });
+      res.json({ mission: fallback, source: 'fallback' });
       return;
     }
     const clamp = (value: unknown) => Math.max(-30, Math.min(30, Number(value) || 0));
+    const generatedType = parsed.type;
+    const semanticFields = generatedType === 'escape_police'
+      ? { wantedLevelOnStart: Math.max(1, Math.min(3, Number(parsed.wantedLevelOnStart) || Math.max(1, Number(context.wantedLevel) || 1))), requiresPackagePickup: true }
+      : generatedType === 'trade_flip'
+        ? { requiredTradeItemId: 'retro_radio_cassette', requiredTradeItemName: 'Retro Radio-Kasetofon 90-ih', requiredTradeQuantity: 1 }
+        : generatedType === 'turf_war'
+          ? { turfZoneId: ['tz_tabacka', 'tz_korzo', 'tz_cacalica', 'tz_buvljak', 'tz_hipodrom', 'tz_park'].includes(parsed.turfZoneId) ? parsed.turfZoneId : 'tz_cacalica' }
+          : {};
     const mission = {
       ...fallback,
       id: `ai_${Date.now()}_${Math.round(x * 10)}_${Math.round(z * 10)}`,
@@ -221,11 +229,12 @@ Koordinate moraju biti u opsegu -30..30, sadržaj je fikcionalan i bez realnih u
       timeLimitSeconds: Math.max(120, Math.min(1800, Number(parsed.timeLimitSeconds) || fallback.timeLimitSeconds)),
       targetCoords: { x: clamp(checkpoints[0].x), z: clamp(checkpoints[0].z) },
       checkpoints: checkpoints.map((point: any) => ({ label: point.label.slice(0, 100), x: clamp(point.x), z: clamp(point.z) })),
+      ...semanticFields,
     };
-    res.json({ mission });
+    res.json({ mission, source: 'gemini' });
   } catch (err: any) {
     console.warn('[Gemini Mission Generator Fallback]', err?.message || 'unknown error');
-    res.json({ mission: fallback });
+    res.json({ mission: fallback, source: 'fallback' });
   }
 });
 
