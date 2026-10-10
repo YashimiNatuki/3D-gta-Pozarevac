@@ -34,6 +34,8 @@ import { parseLocalCharacterGlb } from '../services/gltfCharacter';
 import { ProceduralFootIkSolver } from '../services/proceduralFootIk';
 import { GlobalEnvironmentFx } from '../services/globalEnvironmentFx';
 import { CinematicCameraDynamics } from '../services/cinematicCameraDynamics';
+import { createModularBuilding } from '../services/modularBuildingFactory';
+import { shouldAutoActivatePoi } from '../services/poiInteractionRules';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -101,6 +103,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const sphereMeshRef = useRef<THREE.Mesh | null>(null);
   const bloomPassRef = useRef<UnrealBloomPass | null>(null);
   const nearPoiRef = useRef<PožarevacPoi | null>(null);
+  const onInteractWithPoiRef = useRef(onInteractWithPoi);
+  onInteractWithPoiRef.current = onInteractWithPoi;
   const weatherManagerRef = useRef<WeatherManager | null>(null);
   const trafficSystemRef = useRef<TrafficSystem | null>(null);
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
@@ -123,6 +127,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [mapImportStatus, setMapImportStatus] = useState('');
   const [characterModelStatus, setCharacterModelStatus] = useState('');
   const [hasImportedCharacter, setHasImportedCharacter] = useState(false);
+  const [webglError, setWebglError] = useState(false);
   const terrainRef = useRef<PozarevacDemHeightfield | null>(null);
   const onVehicleImpactRef = useRef(onVehicleImpact);
   onVehicleImpactRef.current = onVehicleImpact;
@@ -167,11 +172,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 800);
     camera.position.set(0, 2.8, 5.0);
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: false,
-      powerPreference: 'high-performance',
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance',
+      });
+      setWebglError(false);
+    } catch (error) {
+      console.warn('[ThreeCanvas] WebGL is unavailable; keeping the HUD and mission controls usable.', error);
+      setWebglError(true);
+      return;
+    }
     renderer.setSize(width, height);
     const deviceMemory = 'deviceMemory' in navigator
       ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
@@ -375,13 +388,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     const createCityBuilding = (x: number, z: number, w: number, h: number, d: number, neonTitle?: string, neonColor?: number) => {
       const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
-      const bGeo = new THREE.BoxGeometry(w, h, d);
-      const bMat = new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.8, metalness: 0.1 });
-      environmentFx.registerMaterial(bMat);
-      const building = new THREE.Mesh(bGeo, bMat);
-      building.position.set(x, h / 2, z);
-      building.castShadow = true;
-      building.receiveShadow = true;
+      const building = createModularBuilding({
+        width: w,
+        height: h,
+        depth: d,
+        bodyColor: bColor,
+        roofColor: 0x251b2b,
+        windowColor: neonColor ?? 0x0e7490,
+        floors: Math.max(2, Math.round(h / 3)),
+        name: `Modularna kuća/fasada — ${neonTitle ?? 'Požarevac'}`,
+        roofStyle: h >= 12 ? 'flat' : 'gable',
+      });
+      building.position.set(x, 0, z);
+      building.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+          environmentFx.registerMaterial(object.material);
+        }
+      });
       buildingsGroup.add(building);
 
       const columns = Math.max(2, Math.floor(w / 1.25));
@@ -634,6 +657,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 12. 3D INTERACTIVE POI BEACONS
     const poiGroup = new THREE.Group();
     const coresList: THREE.Mesh[] = [];
+    const beaconVisuals: Array<{ poi: PožarevacPoi; container: THREE.Group; beam: THREE.Mesh; ring: THREE.Mesh; core: THREE.Mesh }> = [];
 
     POŽAREVAC_POIS.forEach((poi) => {
       // Keep the square POI interactive, but do not place a giant marker in the open road.
@@ -680,6 +704,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       core.position.y = 2.4;
       beaconContainer.add(core);
       coresList.push(core);
+      beaconVisuals.push({ poi, container: beaconContainer, beam, ring, core });
 
       beaconContainer.name = `POI: ${poi.name}`;
       poiGroup.add(beaconContainer);
@@ -835,8 +860,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           audioDsp.playRotateTick();
           return;
         }
-        if (nearPoiRef.current && onInteractWithPoi) {
-          onInteractWithPoi(nearPoiRef.current);
+        if (nearPoiRef.current && onInteractWithPoiRef.current) {
+          onInteractWithPoiRef.current(nearPoiRef.current);
           audioDsp.playRotateTick();
         }
       }
@@ -997,9 +1022,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       }
       if (foundNearPoi?.id !== nearPoiRef.current?.id) {
+        const enteredPoi = foundNearPoi;
+        const previousPoiId = nearPoiRef.current?.id;
         nearPoiRef.current = foundNearPoi;
         if (onNearPoiChange) onNearPoiChange(foundNearPoi);
+        if (enteredPoi && shouldAutoActivatePoi(enteredPoi.id, previousPoiId) && onInteractWithPoiRef.current) {
+          onInteractWithPoiRef.current(enteredPoi);
+          audioDsp.playHarvestChime();
+        }
       }
+
+      beaconVisuals.forEach(({ poi, beam, ring, core }) => {
+        const distance = Math.hypot(controller.position.x - poi.coords.x, controller.position.z - poi.coords.z);
+        const isNearby = distance < 12;
+        beam.visible = isNearby;
+        const proximity = isNearby ? THREE.MathUtils.clamp(1 - distance / 12, 0, 1) : 0;
+        (beam.material as THREE.MeshBasicMaterial).opacity = 0.08 + proximity * 0.32;
+        ring.scale.setScalar(1 + proximity * 0.18 + Math.sin(elapsedTime * 3.2) * 0.035);
+        (core.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.75 + proximity * 1.4;
+      });
 
       let nearestPlot: PlantPlot | null = null;
       let nearestPlotDistance = 4.2;
@@ -1254,6 +1295,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   return (
     <div className="relative w-full h-full select-none">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      {webglError && (
+        <div role="status" className="pointer-events-none absolute inset-4 z-20 flex items-center justify-center rounded-2xl border border-fuchsia-400/40 bg-slate-950/90 p-6 text-center font-mono text-slate-100 shadow-2xl backdrop-blur">
+          <div className="max-w-md">
+            <div className="text-sm font-black tracking-widest text-fuchsia-300">3D RENDERER PAUSED</div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">Ovaj browser blokira WebGL2. HUD, misije, POI akcije i intro ostaju dostupni; otvori preview u Chrome-u sa uključenim hardverskim ubrzanjem za punu 3D scenu.</p>
+            <div className="mt-3 rounded-lg border border-cyan-400/30 bg-cyan-950/30 px-3 py-2 text-[10px] font-bold text-cyan-200">VAŠARIŠTE: priđi markeru → auto misija ili E / KLIK → razgovor</div>
+          </div>
+        </div>
+      )}
       <div className="pointer-events-auto absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 font-mono">
         <label className="rounded-lg border border-emerald-400/50 bg-slate-950/85 px-2 py-1.5 text-[10px] font-black text-emerald-200 shadow-lg backdrop-blur">
           PODLOGA

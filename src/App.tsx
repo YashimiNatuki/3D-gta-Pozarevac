@@ -13,6 +13,7 @@ import {
   INITIAL_INVENTORY,
 } from './services/characterProgress';
 import { PožarevacPoi } from './services/pozaravacPoi';
+import { canInteractWithPoi } from './services/poiInteractionRules';
 import { WeatherState } from './services/weatherManager';
 import { User } from 'firebase/auth';
 import { ThugOutfitId, CustomCharacterConfig } from './services/characterModel';
@@ -162,6 +163,8 @@ export function App() {
   // POI interaction & dialogue trigger state
   const [nearPoi, setNearPoi] = useState<PožarevacPoi | null>(null);
   const [activePoiDialogue, setActivePoiDialogue] = useState<{ poi: PožarevacPoi; timestamp: number } | null>(null);
+  const [discoveredPoiIds, setDiscoveredPoiIds] = useState<string[]>([]);
+  const lastPoiInteractionRef = useRef<{ id: string; at: number } | null>(null);
 
   // Modal Open States
   const [isDriveOpen, setIsDriveOpen] = useState(false);
@@ -507,15 +510,33 @@ export function App() {
 
   // Mini-game POI Interaction: opens Chatbot with POI quest dialogue
   const handleInteractWithPoi = (poi: PožarevacPoi) => {
+    const now = Date.now();
+    const lastInteraction = lastPoiInteractionRef.current;
+    if (!canInteractWithPoi(lastInteraction, poi.id, now)) return;
+    lastPoiInteractionRef.current = { id: poi.id, at: now };
     audioDsp.playHarvestChime();
-    setActivePoiDialogue({ poi, timestamp: Date.now() });
+    setActivePoiDialogue({ poi, timestamp: now });
     setIsChatOpen(true);
-    handleScoreIncrement(poi.rewardXp, 0, 0);
-    setCharacterStats((st) => ({
-      ...st,
-      cash: st.cash + poi.rewardCash,
-      respect: Math.min(100, st.respect + 5),
-    }));
+    const activeCheckpointMission = dynamicMissions.find((mission) => {
+      if (mission.status !== 'active') return false;
+      const checkpoints = mission.checkpoints ?? [];
+      const checkpoint = checkpoints[mission.checkpointIndex ?? 0];
+      const target = checkpoint ?? mission.targetCoords;
+      return Math.hypot(target.x - poi.coords.x, target.z - poi.coords.z) <= 3.5;
+    });
+    if (activeCheckpointMission) {
+      handleCompleteDynamicMission(activeCheckpointMission.id, activeCheckpointMission);
+      setMissionFeedback(`POI potvrđen: ${poi.serbianName}. Sledeći cilj je sada vidljiv u panelu MISIJE.`);
+    }
+    if (!discoveredPoiIds.includes(poi.id)) {
+      setDiscoveredPoiIds((previous) => previous.includes(poi.id) ? previous : [...previous, poi.id]);
+      handleScoreIncrement(poi.rewardXp, 0, 0);
+      setCharacterStats((st) => ({
+        ...st,
+        cash: st.cash + poi.rewardCash,
+        respect: Math.min(100, st.respect + 5),
+      }));
+    }
   };
 
   // Dynamic Mission Handlers

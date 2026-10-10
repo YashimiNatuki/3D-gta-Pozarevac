@@ -57,6 +57,8 @@ import { computeSpeedFov, decayShake } from '../src/services/cinematicCameraDyna
 import { mapLiveWeatherToState, normalizeLiveWeather } from '../src/services/liveWeatherSync';
 import { buildNpcSystemPrompt, parseNpcActionPayload } from '../src/services/npcPrompt';
 import { TEXTURE_PROMPTS } from '../src/services/texturePromptCatalog';
+import { getModularBuildingBounds } from '../src/services/modularBuildingFactory';
+import { canInteractWithPoi, shouldAutoActivatePoi, VASARISTE_POI_ID } from '../src/services/poiInteractionRules';
 import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -106,6 +108,12 @@ assert.match(buildNpcSystemPrompt({ name: 'Sale', inGameTime: 'noć', weather: '
 assert.deepEqual(parseNpcActionPayload('{"dialogue":"Stani, brate.","Action":"PointFinger"}'), { dialogue: 'Stani, brate.', action: 'PointFinger' });
 assert.equal(parseNpcActionPayload('{"dialogue":"x","Action":"ExecuteCode"}'), null);
 assert.match(TEXTURE_PROMPTS.wornNeonAsphalt, /tileable/i);
+assert.deepEqual(getModularBuildingBounds({ width: 8, height: 10, depth: 6, bodyColor: 0x334155 }), { width: 8, height: 11.92, depth: 6 });
+assert.equal(shouldAutoActivatePoi(VASARISTE_POI_ID, undefined), true);
+assert.equal(shouldAutoActivatePoi(VASARISTE_POI_ID, 'hipodrom_pozarevac'), true);
+assert.equal(shouldAutoActivatePoi('hipodrom_pozarevac', undefined), false);
+assert.equal(canInteractWithPoi({ id: VASARISTE_POI_ID, at: 10_000 }, VASARISTE_POI_ID, 11_799), false);
+assert.equal(canInteractWithPoi({ id: VASARISTE_POI_ID, at: 10_000 }, VASARISTE_POI_ID, 11_800), true);
 
 const terrainFixture = {
   source: 'test', sourceUrl: 'https://example.invalid', attribution: 'test', licenseUrl: 'https://example.invalid',

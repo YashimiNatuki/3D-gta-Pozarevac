@@ -906,16 +906,24 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
 
                 {/* Proximity POI Interaction Dugme */}
                 {nearPoi && onInteractWithPoi && (
-                  <button
-                    onClick={() => {
-                      onInteractWithPoi(nearPoi);
-                      audioDsp.playHarvestChime();
-                    }}
-                    className="w-full mt-2 py-1.5 px-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-[10px] transition shadow-md shadow-amber-500/20 cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>{nearPoi.icon}</span>
-                    <span>HAKUJ / PREUZMI: {nearPoi.name.toUpperCase()}</span>
-                  </button>
+                  <div className="w-full mt-2 rounded-xl border border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-950/90 via-slate-950/95 to-purple-950/90 p-2 shadow-md shadow-fuchsia-500/20">
+                    <button
+                      onClick={() => {
+                        onInteractWithPoi(nearPoi);
+                        audioDsp.playHarvestChime();
+                      }}
+                      className="w-full py-1.5 px-2 rounded-lg bg-gradient-to-r from-fuchsia-500 to-purple-500 hover:brightness-110 text-white font-black text-[10px] transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>{nearPoi.icon}</span>
+                      <span>{nearPoi.id === 'vasariste_stadium' ? 'AKTIVIRAJ VAŠARIŠTE MISIJU' : `OTVORI POI MISIJU: ${nearPoi.name.toUpperCase()}`}</span>
+                    </button>
+                    <div className="mt-1 text-center text-[9px] font-bold text-fuchsia-200">
+                      {nearPoi.id === 'vasariste_stadium' ? 'AUTO-AKTIVACIJA NA MARKERU • E / KLIK ZA PONOVNI RAZGOVOR' : 'E / KLIK • PRVI DOLAZAK OTKLJUČAVA XP + CASH'}
+                    </div>
+                    <div className="mt-0.5 text-center text-[8px] text-slate-300">
+                      {nearPoi.description}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
