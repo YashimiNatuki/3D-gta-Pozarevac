@@ -49,6 +49,7 @@ import { GameDirector } from '../src/services/gameDirector';
 import { isValidPozarevacDem, samplePozarevacTerrainGrade, samplePozarevacTerrainHeight } from '../src/services/terrainHeightfield';
 import { findApproachingVehicleThreat } from '../src/services/pedestrianPanic';
 import { applyVehicleImpactConsequences } from '../src/services/vehicleImpactConsequences';
+import { terrainPixelToSourceCoordinate } from '../src/services/terrainImagery';
 import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -96,6 +97,14 @@ assert.equal(samplePozarevacTerrainHeight(terrainFixture, -10, -10), 0);
 assert.equal(samplePozarevacTerrainHeight(terrainFixture, 0, 0), 10 / 16);
 assert.ok(samplePozarevacTerrainGrade(terrainFixture, { x: 0, z: 0 }, { x: 10, z: 0 }) > 0);
 assert.equal(isValidPozarevacDem({ ...terrainFixture, valuesDecimeters: [0] }), false);
+const rasterCenterWgs84 = terrainPixelToSourceCoordinate(511.5, 511.5, terrainFixture, 4326);
+assert.ok(Math.abs(rasterCenterWgs84.x - terrainFixture.origin.lon) < 1e-9);
+assert.ok(Math.abs(rasterCenterWgs84.y - terrainFixture.origin.lat) < 1e-9);
+const rasterNorthWestWgs84 = terrainPixelToSourceCoordinate(0, 0, terrainFixture, 4326);
+const rasterSouthEastWgs84 = terrainPixelToSourceCoordinate(1023, 1023, terrainFixture, 4326);
+assert.ok(rasterNorthWestWgs84.x < rasterSouthEastWgs84.x && rasterNorthWestWgs84.y > rasterSouthEastWgs84.y);
+const rasterCenterMercator = terrainPixelToSourceCoordinate(511.5, 511.5, terrainFixture, 3857);
+assert.ok(Number.isFinite(rasterCenterMercator.x) && Number.isFinite(rasterCenterMercator.y));
 
 const closingVehicle = { x: -7, z: 0, velocityX: 3, velocityZ: 0 };
 assert.ok(findApproachingVehicleThreat({ x: 0, z: 0 }, [closingVehicle]), 'a fast vehicle on collision course should trigger panic');

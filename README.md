@@ -14,7 +14,9 @@ Web 3D igra / interaktivni prototip smešten u stilizovanu, cyberpunk verziju ce
 - Udar vozila: vozilo koje se kreće brže od približno 1,8 m/s može odbaciti igrača; udar utiče na zdravlje, trošak lečenja i Wanted nivo kod jačeg kontakta. Vozilo koči, uz 1,5 s cooldown.
 - POI i scenografija Požarevca, uključujući GLB modele Vašarišta, Starog Korzoa i bolnice, uz proceduralne fallback modele.
 - Kvartovski reoni, lokalna pijaca, sadnja i žetva na parcelama uz fizičku blizinu i pravila reona.
-- Izbor između umetničke podloge i lokalnog OSM sloja sa stvarnim ulicama, zgradama, parkovima i vodom; OSM snapshot se učitava sa aplikacije, bez runtime tile/API zahteva.
+- Izbor između umetničke podloge, OSM-a, satelitskog GeoTIFF-a i hibridnog raster+OSM prikaza. GeoTIFF se uvozi lokalno i poravnava sa DEM-om; bez runtime tile/API zahteva.
+- Lokalni self-contained GLB import za rig-ovane likove; glTF skinning radi na GPU-u, a animacije po nazivima clip-ova mogu mapirati idle/walk/run/jump stanja. Proceduralni lik ostaje kao fallback.
+- Vozila prate DEM preko zaglađene suspenzije, uz nagib karoserije po prednjoj/zadnjoj i levoj/desnoj visinskoj razlici; pešak naginje telo prema usponu.
 - Visinski reljef je obrađen iz Copernicus DEM GLO-30; Čačalica je GPS-usklađena sa grebenom i oko 74 m je iznad centra (oko 4,6 game jedinica). Nije LiDAR niti krovno precizna rekonstrukcija.
 - Mission tracker prikazuje poglavlje priče, sledeći checkpoint, rastojanje i opciono otvarajući brifing lika.
 - Srpski NPC audio barkovi, ambijentalni zvuk i intro video.
@@ -25,7 +27,8 @@ Web 3D igra / interaktivni prototip smešten u stilizovanu, cyberpunk verziju ce
 - React 19 + TypeScript
 - Vite 8
 - Three.js `EffectComposer` post-processing (RenderPass, UnrealBloomPass)
-- Cannon-es za fiziku
+- Cannon-es za kolizije i osnovu fizike; Three.js kinematički model za gradski saobraćaj
+- geotiff.js za lokalno čitanje i reprojekciju satellite rasterskih podataka
 - Tailwind CSS 4
 - Web Audio API
 - Firebase i Google Gemini integracije
@@ -102,7 +105,9 @@ src/
   services/pozarevacDistricts.ts   # kanonski registar kvartova
   services/streetEconomy.ts        # tržište, parcele, semena i žetva
   services/urbanMicroLandmarks.ts  # GLB landmarki i proceduralni fallback
-  services/characterModel.ts       # proceduralni model lika
+  services/characterModel.ts       # proceduralni rig i runtime GLB/AnimationMixer podrška
+  services/gltfCharacter.ts        # lokalna, self-contained glTF 2.0 GLB validacija/učitavanje
+  services/terrainImagery.ts       # EPSG:4326/3857 GeoTIFF reprojekcija na DEM extent
   services/audioDsp.ts             # audio DSP i efekti
   services/audioLocalizationManager.ts
 public/assets/landmarks/           # optimizovani GLB modeli grada
@@ -118,7 +123,7 @@ scripts/update-pozarevac-osm.py    # reproducibilno osvežavanje ograničenog iz
 
 Vašarište se u igri tretira kao stadion; neke lokalne oznake, poput Đure/favela i Bloka C, predstavljaju gameplay nazive i približne zone. Pogledaj [izvore lokacija i ograničenja](docs/POZAREVAC_LANDMARK_SOURCES.md). Modeli u `public/assets/landmarks/` su generisani 3D asseti, a ne zvanični arhitektonski nacrti.
 
-Tekstura tla može da se prebaci između umetničke i stvarne OSM geometrije. DEM visinski mesh učitava se lokalno pri pokretanju; mapa tako nije satelitska fotografija. Atribucije OSM i Copernicus vidljive su u sceni. Google Satellite/Hybrid prikaz ostaje u zasebnom Google Maps prozoru. Izvori, licence i granice rezolucije su u [MAP_DATA_SOURCES.md](docs/MAP_DATA_SOURCES.md).
+U igri možeš uvesti svoj GeoTIFF preko **UVEZI GeoTIFF**. Raster mora biti north-up, u EPSG:4326 ili EPSG:3857 i pokrivati ceo 2.56×2.56 km DEM extent; hibridni mod kompozituje ga sa offline OSM vektorima. Uvoz ostaje u memoriji trenutne sesije i ne šalje fajl serveru. Unesi provajdera/licencu u polje **IZVOR/LICENCA** i koristi samo podatke koje imaš pravo da redistribuiraš. Za lik koristi self-contained `.glb` preko **UVEZI GLB LIK**; fajl do 100 MB može nositi rig, animacije i teksture, eksterni URL-ovi se odbijaju. Bez uvezenih fajlova ostaju proceduralna tekstura i lik. Izvori i ograničenja su u [MAP_DATA_SOURCES.md](docs/MAP_DATA_SOURCES.md).
 
 ## Doprinos i licenca
 

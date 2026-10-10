@@ -118,6 +118,24 @@ export interface CharacterRig {
   setOutfit: (outfitId: ThugOutfitId) => void;
   setCustomConfig: (cfg: CustomCharacterConfig) => void;
   setPlayerTag: (name: string, level: number) => void;
+  setGltfModel: (model: THREE.Group | null, clips?: THREE.AnimationClip[]) => void;
+}
+
+function disposeGltfModel(model: THREE.Group): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
+  model.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    geometries.add(object.geometry);
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      materials.add(material);
+      for (const value of Object.values(material)) if (value instanceof THREE.Texture) textures.add(value);
+    }
+  });
+  geometries.forEach((geometry) => geometry.dispose());
+  textures.forEach((texture) => texture.dispose());
+  materials.forEach((material) => material.dispose());
 }
 
 /**
@@ -626,6 +644,58 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
 
   // 5. BIOMECHANICAL LOCOMOTION & SYNCHRONIZED CHOREOGRAPHY
   let animClock = 0;
+  let importedGltfRoot: THREE.Group | null = null;
+  let gltfMixer: THREE.AnimationMixer | null = null;
+  let activeGltfAction: THREE.AnimationAction | null = null;
+  let gltfActions: Partial<Record<'idle' | 'walk' | 'run' | 'jump', THREE.AnimationAction>> = {};
+
+  const setGltfModel = (model: THREE.Group | null, clips: THREE.AnimationClip[] = []) => {
+    if (importedGltfRoot) {
+      if (gltfMixer) {
+        gltfMixer.stopAllAction();
+        gltfMixer.uncacheRoot(importedGltfRoot);
+      }
+      rootGroup.remove(importedGltfRoot);
+      disposeGltfModel(importedGltfRoot);
+      importedGltfRoot = null;
+      gltfMixer = null;
+      activeGltfAction = null;
+      gltfActions = {};
+    }
+
+    rootGroup.children.forEach((child) => {
+      child.visible = !model || child === heroLight || child === playerAuraRing || child === playerTagSprite;
+    });
+    if (!model) return;
+
+    model.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    const height = bounds.getSize(new THREE.Vector3()).y;
+    if (bounds.isEmpty() || height < 0.05) throw new Error('GLB model nema validnu visinu.');
+    const scale = 1.9 / height;
+    const center = bounds.getCenter(new THREE.Vector3());
+    model.scale.setScalar(scale);
+    model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+    model.name = 'Imported skinned player GLB';
+    rootGroup.add(model);
+    importedGltfRoot = model;
+
+    if (clips.length) {
+      gltfMixer = new THREE.AnimationMixer(model);
+      const findClip = (pattern: RegExp) => clips.find((clip) => pattern.test(clip.name));
+      const idle = findClip(/idle|stand|breath/i);
+      const walk = findClip(/walk|locomotion/i);
+      const run = findClip(/run|sprint/i);
+      const jump = findClip(/jump|fall/i);
+      if (idle) gltfActions.idle = gltfMixer.clipAction(idle);
+      if (walk) gltfActions.walk = gltfMixer.clipAction(walk);
+      if (run) gltfActions.run = gltfMixer.clipAction(run);
+      if (jump) gltfActions.jump = gltfMixer.clipAction(jump);
+      if (!Object.keys(gltfActions).length) gltfActions.idle = gltfMixer.clipAction(clips[0]);
+      activeGltfAction = gltfActions.idle ?? Object.values(gltfActions)[0] ?? null;
+      activeGltfAction?.play();
+    }
+  };
 
   const updateAnimation = (delta: number, isMoving: boolean, isRunning: boolean, isJumping: boolean) => {
     const speedMultiplier = isRunning ? 12.0 : isMoving ? 7.6 : 2.0;
@@ -706,6 +776,17 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
       // Subdued organic breathing motion
       torsoGroup.position.y = 1.15 + Math.sin(animClock) * 0.016;
     }
+
+    if (gltfMixer) {
+      const mode = isJumping ? 'jump' : isMoving ? (isRunning ? 'run' : 'walk') : 'idle';
+      const nextAction = gltfActions[mode] ?? (mode === 'run' ? gltfActions.walk : undefined) ?? gltfActions.idle ?? Object.values(gltfActions)[0];
+      if (nextAction && nextAction !== activeGltfAction) {
+        activeGltfAction?.fadeOut(0.16);
+        nextAction.reset().fadeIn(0.16).play();
+        activeGltfAction = nextAction;
+      }
+      gltfMixer.update(delta);
+    }
   };
 
   const setOutfit = (outfitId: ThugOutfitId) => {
@@ -766,5 +847,6 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
     setOutfit,
     setCustomConfig,
     setPlayerTag,
+    setGltfModel,
   };
 }

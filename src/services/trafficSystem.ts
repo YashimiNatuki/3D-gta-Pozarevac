@@ -17,6 +17,7 @@ export interface Vehicle {
   path: THREE.Vector3[];
   wheels: THREE.Mesh[];
   headlights: THREE.SpotLight[];
+  suspensionY: number;
 }
 
 export class TrafficSystem {
@@ -222,6 +223,7 @@ export class TrafficSystem {
         path,
         wheels,
         headlights: lights,
+        suspensionY: group.position.y,
       });
     });
   }
@@ -230,7 +232,8 @@ export class TrafficSystem {
     this.pursuitMode = enabled;
   }
 
-  public update(delta: number, playerPos: THREE.Vector3) {
+  public update(delta: number, playerPos: THREE.Vector3, getGroundHeight?: (x: number, z: number) => number) {
+    const dt = Math.min(delta, 0.05);
     const now = performance.now();
 
     this.vehicles.forEach((v) => {
@@ -255,7 +258,7 @@ export class TrafficSystem {
       // 1. Physical AABB impact or close head-on approach.
       if (vehicleImpact || distToPlayer < 1.45) {
         effectiveSpeed = 0; // Brake on impact.
-        v.velocity.multiplyScalar(Math.max(0, 1 - delta * 12));
+        v.velocity.multiplyScalar(Math.max(0, 1 - dt * 12));
         if (now - this.lastCrashSoundTime > 1500) {
           this.lastCrashSoundTime = now;
           this.lastDriverVoiceTime = now;
@@ -300,16 +303,16 @@ export class TrafficSystem {
         const desiredForward = new THREE.Vector3(Math.sin(v.mesh.rotation.y), 0, Math.cos(v.mesh.rotation.y));
         const desiredVelocity = desiredForward.multiplyScalar(effectiveSpeed);
         const acceleration = v.policeTuning ? 18 : 12;
-        v.velocity.lerp(desiredVelocity, Math.min(1, acceleration * delta));
+        v.velocity.lerp(desiredVelocity, Math.min(1, acceleration * dt));
         const side = new THREE.Vector3(Math.cos(v.mesh.rotation.y), 0, -Math.sin(v.mesh.rotation.y));
         const lateralVelocity = side.dot(v.velocity);
         const grip = (v.policeTuning ? 7.5 : 10.5) - Math.abs(v.steering) * (v.policeTuning ? 5.5 : 3.5);
-        v.velocity.addScaledVector(side, -lateralVelocity * Math.min(1, Math.max(0.5, grip) * delta));
-        v.driftAngle = THREE.MathUtils.lerp(v.driftAngle, v.steering * speedRatio * 0.42, Math.min(1, delta * 8));
-        v.mesh.rotation.y += v.steering * (v.policeTuning ? 2.7 : 2.2) * delta;
+        v.velocity.addScaledVector(side, -lateralVelocity * Math.min(1, Math.max(0.5, grip) * dt));
+        v.driftAngle = THREE.MathUtils.damp(v.driftAngle, v.steering * speedRatio * 0.42, 8, dt);
+        v.mesh.rotation.y += v.steering * (v.policeTuning ? 2.7 : 2.2) * dt;
 
         // Safety steering: verify forward ray doesn't intersect building boxes
-        const nextPos = v.mesh.position.clone().addScaledVector(v.velocity, delta);
+        const nextPos = v.mesh.position.clone().addScaledVector(v.velocity, dt);
         let safeToMove = true;
         const nearbyBuildings = this.buildingHash.query({
           minX: nextPos.x - 0.8,
@@ -336,12 +339,31 @@ export class TrafficSystem {
         }
 
         // Body yaw follows the chassis while the visual body keeps a small drift bias.
-        v.mesh.rotation.y += v.driftAngle * delta;
+        v.mesh.rotation.y += v.driftAngle * dt;
 
         // Spin wheels
         v.wheels.forEach((w) => {
-          w.rotation.x += effectiveSpeed * delta * 3;
+          w.rotation.x += effectiveSpeed * dt * 3;
         });
+      }
+
+      if (getGroundHeight) {
+        const yaw = v.mesh.rotation.y;
+        const forwardX = Math.sin(yaw);
+        const forwardZ = Math.cos(yaw);
+        const sideX = Math.cos(yaw);
+        const sideZ = -Math.sin(yaw);
+        const frontY = getGroundHeight(v.mesh.position.x + forwardX * 1.35, v.mesh.position.z + forwardZ * 1.35);
+        const rearY = getGroundHeight(v.mesh.position.x - forwardX * 1.35, v.mesh.position.z - forwardZ * 1.35);
+        const leftY = getGroundHeight(v.mesh.position.x - sideX * 0.68, v.mesh.position.z - sideZ * 0.68);
+        const rightY = getGroundHeight(v.mesh.position.x + sideX * 0.68, v.mesh.position.z + sideZ * 0.68);
+        const targetPitch = THREE.MathUtils.clamp(-Math.atan2(frontY - rearY, 2.7), -0.22, 0.22);
+        const targetRoll = THREE.MathUtils.clamp(Math.atan2(rightY - leftY, 1.36), -0.2, 0.2);
+        const groundY = getGroundHeight(v.mesh.position.x, v.mesh.position.z) + 0.34;
+        v.suspensionY = THREE.MathUtils.damp(v.suspensionY, groundY, 16, dt);
+        v.mesh.position.y = v.suspensionY;
+        v.mesh.rotation.x = THREE.MathUtils.damp(v.mesh.rotation.x, targetPitch, 10, dt);
+        v.mesh.rotation.z = THREE.MathUtils.damp(v.mesh.rotation.z, targetRoll, 10, dt);
       }
     });
   }

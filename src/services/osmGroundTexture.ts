@@ -90,15 +90,20 @@ function roadColor(highway: string): string {
  * Renders the bundled OSM vectors into the game's 160 x 160-unit ground plane.
  * This is an offline, original map style: it does not request or cache raster tiles.
  */
-export function createOpenStreetMapGroundTexture(elements: OsmGroundElement[]): THREE.CanvasTexture {
+export function createOpenStreetMapGroundTexture(
+  elements: OsmGroundElement[],
+  options: { transparentBackground?: boolean } = {},
+): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = TEXTURE_SIZE;
   canvas.height = TEXTURE_SIZE;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
-  ctx.fillStyle = '#74756d';
-  ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  if (!options.transparentBackground) {
+    ctx.fillStyle = '#74756d';
+    ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  }
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);

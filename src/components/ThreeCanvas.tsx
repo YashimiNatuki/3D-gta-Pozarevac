@@ -29,6 +29,8 @@ import { buildPozarevacLandmarks } from '../services/pozarevacLandmarks';
 import { buildUrbanMicroLandmarks } from '../services/urbanMicroLandmarks';
 import { buildPlantPlotModels, disposePlantPlotModels } from '../services/plantPlotModels';
 import { isValidPozarevacDem, samplePozarevacTerrainHeight, type PozarevacDemHeightfield } from '../services/terrainHeightfield';
+import { importTerrainGeoTiff } from '../services/terrainImagery';
+import { parseLocalCharacterGlb } from '../services/gltfCharacter';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -108,16 +110,27 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onInteractWithPlotRef.current = onInteractWithPlot;
   const nearPlantPlotRef = useRef<PlantPlot | null>(null);
   const gardenPlotGroupRef = useRef<THREE.Group | null>(null);
-  const [groundLayer, setGroundLayer] = useState<'osm' | 'classic'>('classic');
+  const [groundLayer, setGroundLayer] = useState<'osm' | 'classic' | 'satellite' | 'hybrid'>('classic');
   const [osmMapReady, setOsmMapReady] = useState(false);
   const [osmMapFailed, setOsmMapFailed] = useState(false);
   const [demStatus, setDemStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [satelliteReady, setSatelliteReady] = useState(false);
+  const [satelliteAttribution, setSatelliteAttribution] = useState('');
+  const [mapImportStatus, setMapImportStatus] = useState('');
+  const [characterModelStatus, setCharacterModelStatus] = useState('');
+  const [hasImportedCharacter, setHasImportedCharacter] = useState(false);
   const terrainRef = useRef<PozarevacDemHeightfield | null>(null);
   const onVehicleImpactRef = useRef(onVehicleImpact);
   onVehicleImpactRef.current = onVehicleImpact;
   const terrainMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const osmGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const classicGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const satelliteGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const hybridGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const satelliteRasterCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const osmElementsRef = useRef<OsmGroundElement[]>([]);
+  const mapFileInputRef = useRef<HTMLInputElement>(null);
+  const characterFileInputRef = useRef<HTMLInputElement>(null);
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -255,7 +268,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       })
       .then((snapshot) => {
         if (groundRequestCancelled) return;
-        const openMapTexture = createOpenStreetMapGroundTexture(snapshot.elements ?? []);
+        osmElementsRef.current = snapshot.elements ?? [];
+        const openMapTexture = createOpenStreetMapGroundTexture(osmElementsRef.current);
         openMapTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
         osmGroundTextureRef.current = openMapTexture;
         setGroundLayer('osm');
@@ -895,10 +909,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
       // Update AI Traffic System (Slows down near player)
       traffic.setPursuitMode(wantedLevelRef.current > 0);
-      traffic.update(delta, controller.position);
-      traffic.vehicles.forEach((vehicle) => {
-        vehicle.mesh.position.y = getGroundHeight(vehicle.mesh.position.x, vehicle.mesh.position.z) + 0.35;
-      });
+      traffic.update(delta, controller.position, getGroundHeight);
 
       // HQ AI Director fuses live telemetry into deterministic, bounded gameplay signals.
       const activeMission = dynamicMissionsRef.current.find((mission) => mission.status === 'active');
@@ -1035,9 +1046,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       terrainMaterialRef.current?.dispose();
       osmGroundTextureRef.current?.dispose();
       classicGroundTextureRef.current?.dispose();
+      satelliteGroundTextureRef.current?.dispose();
+      hybridGroundTextureRef.current?.dispose();
+      characterRigRef.current?.setGltfModel(null);
       terrainMaterialRef.current = null;
       osmGroundTextureRef.current = null;
       classicGroundTextureRef.current = null;
+      satelliteGroundTextureRef.current = null;
+      hybridGroundTextureRef.current = null;
+      satelliteRasterCanvasRef.current = null;
+      osmElementsRef.current = [];
       if (gardenPlotGroupRef.current) {
         scene.remove(gardenPlotGroupRef.current);
         disposePlantPlotModels(gardenPlotGroupRef.current);
@@ -1121,35 +1139,116 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [sphereColor]);
 
-  const toggleGroundLayer = () => {
-    if (!osmMapReady) return;
-    const nextLayer = groundLayer === 'osm' ? 'classic' : 'osm';
-    const nextTexture = nextLayer === 'osm' ? osmGroundTextureRef.current : classicGroundTextureRef.current;
+  const selectGroundLayer = (nextLayer: 'osm' | 'classic' | 'satellite' | 'hybrid') => {
+    let nextTexture: THREE.CanvasTexture | null = null;
+    if (nextLayer === 'classic') nextTexture = classicGroundTextureRef.current;
+    if (nextLayer === 'osm') nextTexture = osmGroundTextureRef.current;
+    if (nextLayer === 'satellite') nextTexture = satelliteGroundTextureRef.current;
+    if (nextLayer === 'hybrid' && satelliteRasterCanvasRef.current && osmElementsRef.current.length) {
+      hybridGroundTextureRef.current?.dispose();
+      const canvas = document.createElement('canvas');
+      canvas.width = satelliteRasterCanvasRef.current.width;
+      canvas.height = satelliteRasterCanvasRef.current.height;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(satelliteRasterCanvasRef.current, 0, 0, canvas.width, canvas.height);
+        const overlay = createOpenStreetMapGroundTexture(osmElementsRef.current, { transparentBackground: true });
+        context.globalAlpha = 0.9;
+        context.drawImage(overlay.image as CanvasImageSource, 0, 0, canvas.width, canvas.height);
+        context.globalAlpha = 1;
+        overlay.dispose();
+        nextTexture = new THREE.CanvasTexture(canvas);
+        nextTexture.colorSpace = THREE.SRGBColorSpace;
+        nextTexture.anisotropy = terrainMaterialRef.current?.map?.anisotropy ?? 1;
+        hybridGroundTextureRef.current = nextTexture;
+      }
+    }
     const material = terrainMaterialRef.current;
-    if (!nextTexture || !material) return;
+    if (!nextTexture || !material) {
+      setMapImportStatus(nextLayer === 'hybrid' ? 'Hibrid zahteva raster i OSM podatke.' : 'Najpre uvezi GeoTIFF/učitaj podlogu.');
+      return;
+    }
     setGroundLayer(nextLayer);
     material.map = nextTexture;
     material.needsUpdate = true;
+    if (nextLayer !== 'hybrid' && hybridGroundTextureRef.current) {
+      hybridGroundTextureRef.current.dispose();
+      hybridGroundTextureRef.current = null;
+    }
+    setMapImportStatus('');
     audioDsp.playRotateTick();
+  };
+
+  const handleTerrainRasterImport = async (file?: File) => {
+    if (!file) return;
+    if (!terrainRef.current) {
+      setMapImportStatus('DEM još nije spreman; sačekaj učitavanje pa probaj ponovo.');
+      return;
+    }
+    setMapImportStatus('Čitam GeoTIFF i poravnavam ga sa DEM-om…');
+    try {
+      const canvas = await importTerrainGeoTiff(file, terrainRef.current);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.anisotropy = terrainMaterialRef.current?.map?.anisotropy ?? 1;
+      satelliteGroundTextureRef.current?.dispose();
+      satelliteGroundTextureRef.current = texture;
+      satelliteRasterCanvasRef.current = canvas;
+      setSatelliteReady(true);
+      selectGroundLayer('satellite');
+      setMapImportStatus(`Satelitski GeoTIFF učitan: ${file.name}`);
+    } catch (error) {
+      setMapImportStatus(error instanceof Error ? error.message : 'GeoTIFF import nije uspeo.');
+    }
+  };
+
+  const handleCharacterGlbImport = async (file?: File) => {
+    if (!file) return;
+    setCharacterModelStatus('Učitavam glTF skinning i animacije…');
+    try {
+      const result = await parseLocalCharacterGlb(file);
+      characterRigRef.current?.setGltfModel(result.scene, result.animations);
+      setHasImportedCharacter(true);
+      const animationLabel = result.animations.length ? `${result.animations.length} animacija` : 'bez animacija';
+      setCharacterModelStatus(`${file.name} · ${result.hasSkinnedMesh ? 'skinned mesh' : 'rig bez SkinnedMesh'} · ${animationLabel}`);
+    } catch (error) {
+      setCharacterModelStatus(error instanceof Error ? error.message : 'GLB import nije uspeo.');
+    }
   };
 
   return (
     <div className="relative w-full h-full select-none">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
       <div className="pointer-events-auto absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 font-mono">
-        <button
-          type="button"
-          onClick={toggleGroundLayer}
-          disabled={!osmMapReady}
-          aria-pressed={groundLayer === 'osm'}
-          className="rounded-lg border border-emerald-400/50 bg-slate-950/85 px-2.5 py-1.5 text-[10px] font-black tracking-wide text-emerald-200 shadow-lg backdrop-blur hover:bg-slate-900 disabled:cursor-wait disabled:opacity-70"
-          title="Smenjuje lokalne OSM ulice i obrise zgrada sa umetničkom podlogom igre"
-        >
-          {!osmMapReady
-            ? osmMapFailed ? 'OSM NEDOSTUPAN · STILIZOVANA' : 'MAPA: UČITAVAM OSM…'
-            : groundLayer === 'osm' ? 'PODLOGA: OSM VEKTORI' : 'PODLOGA: STILIZOVANA'}
+        <label className="rounded-lg border border-emerald-400/50 bg-slate-950/85 px-2 py-1.5 text-[10px] font-black text-emerald-200 shadow-lg backdrop-blur">
+          PODLOGA
+          <select
+            aria-label="Izaberite teksturu terena"
+            value={groundLayer}
+            onChange={(event) => selectGroundLayer(event.target.value as 'osm' | 'classic' | 'satellite' | 'hybrid')}
+            className="ml-1 bg-transparent text-emerald-100 outline-none"
+          >
+            <option value="classic">stilizovana</option>
+            <option value="osm" disabled={!osmMapReady}>{osmMapReady ? 'OSM' : 'OSM učitavanje…'}</option>
+            <option value="satellite" disabled={!satelliteReady}>satelit</option>
+            <option value="hybrid" disabled={!satelliteReady || !osmMapReady}>hibrid</option>
+          </select>
+        </label>
+        <button type="button" onClick={() => mapFileInputRef.current?.click()} disabled={demStatus !== 'ready'} className="rounded-lg border border-cyan-400/50 bg-slate-950/85 px-2.5 py-1.5 text-[10px] font-black text-cyan-200 shadow-lg backdrop-blur disabled:opacity-50">
+          UVEZI GeoTIFF
         </button>
-        {osmMapReady && groundLayer === 'osm' && (
+        <input ref={mapFileInputRef} type="file" accept=".tif,.tiff,image/tiff" className="hidden" onChange={(event) => { void handleTerrainRasterImport(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+        <button type="button" onClick={() => characterFileInputRef.current?.click()} className="rounded-lg border border-fuchsia-400/50 bg-slate-950/85 px-2.5 py-1.5 text-[10px] font-black text-fuchsia-200 shadow-lg backdrop-blur">
+          UVEZI GLB LIK
+        </button>
+        {hasImportedCharacter && <button type="button" onClick={() => { characterRigRef.current?.setGltfModel(null); setHasImportedCharacter(false); setCharacterModelStatus('Vraćen proceduralni avatar.'); }} className="rounded-lg border border-slate-400/50 bg-slate-950/85 px-2.5 py-1.5 text-[10px] font-black text-slate-200 shadow-lg backdrop-blur">VRATI ORIGINAL</button>}
+        <input ref={characterFileInputRef} type="file" accept=".glb,model/gltf-binary" className="hidden" onChange={(event) => { void handleCharacterGlbImport(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+        {satelliteReady && <label className="flex items-center gap-1 rounded-lg border border-cyan-400/40 bg-slate-950/85 px-2 py-1 text-[9px] text-cyan-100 shadow backdrop-blur"><span>IZVOR/LICENCA</span><input aria-label="Atribucija satelitskog rastera" value={satelliteAttribution} onChange={(event) => setSatelliteAttribution(event.target.value)} placeholder="npr. Copernicus Sentinel-2" className="w-36 bg-transparent text-white outline-none placeholder:text-slate-400" /></label>}
+        {mapImportStatus && <span role="status" className="max-w-80 rounded-md bg-slate-950/85 px-2 py-1 text-[9px] leading-relaxed text-slate-100 shadow backdrop-blur">{mapImportStatus}</span>}
+        {characterModelStatus && <span role="status" className="max-w-80 rounded-md bg-slate-950/85 px-2 py-1 text-[9px] leading-relaxed text-slate-100 shadow backdrop-blur">{characterModelStatus}</span>}
+        {osmMapReady && (groundLayer === 'osm' || groundLayer === 'hybrid') && (
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"
@@ -1159,6 +1258,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             © OpenStreetMap contributors · ODbL
           </a>
         )}
+        {osmMapFailed && <span className="rounded-md bg-slate-950/80 px-2 py-1 text-[9px] text-amber-200 shadow backdrop-blur">OSM nije dostupan; hibridni layer nije spreman.</span>}
         <span className={`rounded-md bg-slate-950/80 px-2 py-1 text-[9px] shadow backdrop-blur ${demStatus === 'ready' ? 'text-cyan-200' : demStatus === 'failed' ? 'text-amber-200' : 'text-slate-300'}`}>
           {demStatus === 'ready' ? 'RELJEF: COPERNICUS GLO-30 · ČAČALICA +74 m' : demStatus === 'failed' ? 'RELJEF: RAVNA PODLOGA (DEM NEDOSTUPAN)' : 'RELJEF: UČITAVAM GLO-30…'}
         </span>

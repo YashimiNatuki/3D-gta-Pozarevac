@@ -329,6 +329,12 @@ export class ThirdPersonController {
       8,
       dt
     );
+    const forwardX = Math.sin(this.currentHeading);
+    const forwardZ = Math.cos(this.currentHeading);
+    const currentGroundY = this.getGroundHeight(this.position.x, this.position.z);
+    const forwardGroundY = this.getGroundHeight(this.position.x + forwardX, this.position.z + forwardZ);
+    const slopePitch = this.isJumping ? 0 : THREE.MathUtils.clamp(-Math.atan2(forwardGroundY - currentGroundY, 1), -0.2, 0.2);
+    this.characterGroup.rotation.x = THREE.MathUtils.damp(this.characterGroup.rotation.x, slopePitch, 8, dt);
 
     // 5. Physics Collision & Continuous Sliding Resolution
     // Player cannot walk through buildings, vehicles, or street objects
