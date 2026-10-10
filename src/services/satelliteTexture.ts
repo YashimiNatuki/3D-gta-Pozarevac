@@ -1,11 +1,7 @@
 import * as THREE from 'three';
 
-/**
- * Generates an ultra-crisp, high-definition, bright procedural satellite street map texture of central Požarevac.
- * Captures Tabačka Čaršija, Trg Radomira Vujovića (Trg Oslobođenja), Gradski Park, Stari Korzo, and urban city blocks.
- * Designed with high contrast, crisp lane markings, and vivid asphalt so roads and player are crystal clear!
- */
-export function createPožarevacSatelliteTexture(): THREE.CanvasTexture {
+/** Creates the art-directed fallback map. This is not satellite imagery or survey geometry. */
+export function createPozarevacStylizedGroundTexture(): THREE.CanvasTexture {
   const size = 2048;
   const canvas = document.createElement('canvas');
   canvas.width = size;

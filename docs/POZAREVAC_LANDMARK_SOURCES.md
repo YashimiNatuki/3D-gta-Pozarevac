@@ -24,5 +24,5 @@ TomTom POI pretraga za “Gradski stadion Vašarište” vratila je nepovezane s
 
 - `src/services/pozaravacPoi.ts` koristi lokalni tangentni ravan sa origin-om **44.62130 N, 21.18780 E**, skalom približno **16 m po Three.js jedinici**, istok kao +X i sever kao −Z.
 - TomTom Maps MCP konektor u ovoj sesiji podržava geokodiranje, POI pretragu, rute i vizuelizaciju mape; ne vraća spreman 3D teren/DEM ili Three.js mesh.
-- Pokušaj preuzimanja vektorske geometrije preko javnog OSM Overpass servisa završio se greškama 504/500; zato **nije** ugrađen nepotvrđen OSM izvod, raster podloga ili DEM i nijedan novi teren nije predstavljen kao realan.
-- Za budući stvarni 3D reljef treba dodati izvor visina (npr. DEM) koji pokriva isti bounding box, obraditi njegove visine/koordinate prema lokalnom transform-u i zabeležiti atribuciju/licencu. Dok to ne postoji, reljef i mikro-lokacije ostaju autorski gameplay prikaz.
+- Ograničeni Overpass upit za centralni okvir uspeo je 10. oktobra 2026. i vratio je OSM puteve, footprint-e zgrada, zelene površine i vodu. Snapshot, repro skripta, WGS84 projekcija i ODbL atribucija dokumentovani su u [`MAP_DATA_SOURCES.md`](./MAP_DATA_SOURCES.md). To je stvarna OSM **vektorska podloga**, ne satelitska fotografija.
+- Google Maps prozor ostaje izvor interaktivnog roadmap/satellite prikaza; tile-ovi se ne scrape-uju niti se prepakivaju u scensku teksturu. Za pravi reljefni displacement potreban je zaseban elevation raster uz izričitu Copernicus atribuciju/licencu; DEM od 30 m je DSM, pa ne predstavlja geometriju trotoara.

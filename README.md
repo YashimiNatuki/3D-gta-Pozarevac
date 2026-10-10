@@ -13,6 +13,8 @@ Web 3D igra / interaktivni prototip smešten u stilizovanu, cyberpunk verziju ce
 - Udar vozila: vozilo koje se kreće brže od približno 1,8 m/s može odbaciti igrača; vozilo koči, uz 1,5 s cooldown. Ovaj efekat trenutno ne oduzima zdravlje niti menja novac ili Wanted nivo.
 - POI i scenografija Požarevca, uključujući GLB modele Vašarišta, Starog Korzoa i bolnice, uz proceduralne fallback modele.
 - Kvartovski reoni, lokalna pijaca, sadnja i žetva na parcelama uz fizičku blizinu i pravila reona.
+- Izbor između umetničke podloge i lokalnog OSM sloja sa stvarnim ulicama, zgradama, parkovima i vodom; OSM snapshot se učitava sa aplikacije, bez runtime tile/API zahteva.
+- Mission tracker prikazuje poglavlje priče, sledeći checkpoint, rastojanje i opciono otvarajući brifing lika.
 - Srpski NPC audio barkovi, ambijentalni zvuk i intro video.
 - Lokalno čuvanje progresa; pojedine cloud funkcije zavise od Firebase/Google podešavanja.
 
@@ -91,6 +93,7 @@ src/
   services/trafficSystem.ts        # saobraćaj i reakcija vozila na sudar
   services/collisionGeometry.ts    # geometrija camera occlusion / vehicle contact
   services/dynamicMissionEngine.ts # misije i turf zone
+  services/osmGroundTexture.ts    # offline render OSM vektora u teksturu tla
   services/pozarevacDistricts.ts   # kanonski registar kvartova
   services/streetEconomy.ts        # tržište, parcele, semena i žetva
   services/urbanMicroLandmarks.ts  # GLB landmarki i proceduralni fallback
@@ -98,7 +101,9 @@ src/
   services/audioDsp.ts             # audio DSP i efekti
   services/audioLocalizationManager.ts
 public/assets/landmarks/           # optimizovani GLB modeli grada
+public/data/pozarevac-osm-extract.json # lokalni OSM podaci, ODbL atribucija u sceni/docs
 public/videos/                     # uvodni video, ako je prisutan u checkout-u
+scripts/update-pozarevac-osm.py    # reproducibilno osvežavanje ograničenog izvoda
  tests/gameplay-invariants.ts      # regresioni invariant testovi
  docs/                             # izvori lokacija, tehničke beleške i roadmap
 ```
@@ -106,6 +111,8 @@ public/videos/                     # uvodni video, ako je prisutan u checkout-u
 ## Lokacije i asseti
 
 Vašarište se u igri tretira kao stadion; neke lokalne oznake, poput Đure/favela i Bloka C, predstavljaju gameplay nazive i približne zone. Pogledaj [izvore lokacija i ograničenja](docs/POZAREVAC_LANDMARK_SOURCES.md). Modeli u `public/assets/landmarks/` su generisani 3D asseti, a ne zvanični arhitektonski nacrti.
+
+3D podloga može da se prebaci na stvarnu OSM geometriju. Atribucija „© OpenStreetMap contributors“ sa ODbL linkom prikazana je uz aktivni sloj; Google satelitski prikaz ostaje u zasebnom Google Maps prozoru. Izvori, licence i granice rezolucije DEM/satelitskih podataka su u [MAP_DATA_SOURCES.md](docs/MAP_DATA_SOURCES.md).
 
 ## Doprinos i licenca
 

@@ -960,7 +960,14 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
                 {/* Dynamic missions active */}
                 {dynamicMissions
                   .filter((m) => m.status === 'active')
-                  .map((dm) => (
+                  .map((dm) => {
+                    const checkpoints = dm.checkpoints ?? [];
+                    const checkpointIndex = Math.min(dm.checkpointIndex ?? 0, Math.max(0, checkpoints.length - 1));
+                    const objective = checkpoints[checkpointIndex];
+                    const target = objective ?? dm.targetCoords;
+                    const distanceMeters = Math.round(Math.hypot(playerPos.x - target.x, playerPos.z - target.z) * 16);
+                    const progress = checkpoints.length > 0 ? Math.round((checkpointIndex / checkpoints.length) * 100) : 0;
+                    return (
                     <div
                       key={dm.id}
                       className="p-2.5 rounded-xl bg-purple-950/60 border border-purple-500/50 shadow-md"
@@ -969,13 +976,49 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
                         <span className="font-black text-white text-xs">{dm.title}</span>
                         <span className="text-[9px] font-bold text-amber-400">+${dm.rewardCash}</span>
                       </div>
+                      {dm.campaignChapter && (
+                        <div className="mt-1 text-[9px] font-black tracking-wider text-cyan-300">
+                          PRIČA · POGLAVLJE {dm.campaignChapter}
+                        </div>
+                      )}
                       <div className="text-[10px] text-purple-300 mt-1">{dm.description}</div>
                       <div className="text-[9px] text-slate-400 mt-1 flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-cyan-400" />
                         <span>{dm.locationName}</span>
                       </div>
+                      <div className="mt-2 rounded-lg border border-cyan-500/20 bg-slate-950/70 p-2">
+                        <div className="flex items-center justify-between gap-2 text-[9px] font-black text-cyan-200">
+                          <span>{objective ? `SLEDEĆI KORAK · ${checkpointIndex + 1}/${checkpoints.length}` : 'SLEDEĆI CILJ'}</span>
+                          <span>{distanceMeters} m</span>
+                        </div>
+                        {checkpoints.length > 0 && (
+                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-800">
+                            <div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${progress}%` }} />
+                          </div>
+                        )}
+                        <div className="mt-1 text-[10px] font-bold text-white">
+                          {objective?.label ?? `Priđi markeru: ${dm.locationName}`}
+                        </div>
+                      </div>
+                      {dm.dialogueText && (
+                        <details className="mt-2 rounded-lg bg-slate-950/50 px-2 py-1.5">
+                          <summary className="cursor-pointer text-[9px] font-bold text-purple-200">BRIFING PRIČE</summary>
+                          <p className="mt-1 text-[10px] leading-relaxed text-slate-300">{dm.dialogueText}</p>
+                          {dm.completionText && <p className="mt-1 text-[9px] text-emerald-300">Posle cilja: {dm.completionText}</p>}
+                        </details>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
+
+                {!dynamicMissions.some((mission) => mission.status === 'active') && (
+                  <div className="rounded-xl border border-cyan-500/25 bg-slate-950/70 p-2.5">
+                    <div className="text-[10px] font-black text-cyan-200">NEMA AKTIVNE MISIJE</div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-300">
+                      Priđi obeleženom kontaktu ili POI-ju i pritisni E. Aktivni cilj i sledeći korak pojaviće se ovde.
+                    </p>
+                  </div>
+                )}
 
                 {/* Quests from list */}
                 {quests.map((q) => (

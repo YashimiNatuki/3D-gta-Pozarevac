@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -7,7 +7,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { audioDsp, spatialSoundManager } from '../services/audioDsp';
 import { CharacterStats, Quest } from '../services/characterProgress';
 import { POŽAREVAC_POIS, PožarevacPoi } from '../services/pozaravacPoi';
-import { createPožarevacSatelliteTexture } from '../services/satelliteTexture';
+import { createPozarevacStylizedGroundTexture } from '../services/satelliteTexture';
+import { createOpenStreetMapGroundTexture, type OsmGroundElement } from '../services/osmGroundTexture';
 import { TrafficSystem } from '../services/trafficSystem';
 import { WeatherManager, WeatherState } from '../services/weatherManager';
 import {
@@ -104,6 +105,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onInteractWithPlotRef.current = onInteractWithPlot;
   const nearPlantPlotRef = useRef<PlantPlot | null>(null);
   const gardenPlotGroupRef = useRef<THREE.Group | null>(null);
+  const [groundLayer, setGroundLayer] = useState<'osm' | 'classic'>('classic');
+  const [osmMapReady, setOsmMapReady] = useState(false);
+  const [osmMapFailed, setOsmMapFailed] = useState(false);
+  const terrainMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const osmGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const classicGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -219,17 +226,45 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const groundGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, 64, 64);
     groundGeo.rotateX(-Math.PI / 2);
 
-    const satTexture = createPožarevacSatelliteTexture();
+    const classicGroundTexture = createPozarevacStylizedGroundTexture();
+    classicGroundTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    classicGroundTextureRef.current = classicGroundTexture;
     const terrainMat = new THREE.MeshStandardMaterial({
-      map: satTexture,
+      map: classicGroundTexture,
       roughness: 0.85,
       metalness: 0.05,
     });
+    terrainMaterialRef.current = terrainMat;
     weatherMgr.setTerrainMaterial(terrainMat);
+
+    // Load the bundled OSM snapshot from this app origin; no external map tiles or API keys.
+    let groundRequestCancelled = false;
+    const groundAbortController = new AbortController();
+    void fetch(`${import.meta.env.BASE_URL}data/pozarevac-osm-extract.json`, { signal: groundAbortController.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`OSM map data HTTP ${response.status}`);
+        return response.json() as Promise<{ elements?: OsmGroundElement[] }>;
+      })
+      .then((snapshot) => {
+        if (groundRequestCancelled) return;
+        const openMapTexture = createOpenStreetMapGroundTexture(snapshot.elements ?? []);
+        openMapTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        osmGroundTextureRef.current = openMapTexture;
+        setGroundLayer('osm');
+        setOsmMapReady(true);
+        terrainMat.map = openMapTexture;
+        terrainMat.needsUpdate = true;
+      })
+      .catch((error: unknown) => {
+        if (!groundRequestCancelled) {
+          setOsmMapFailed(true);
+          console.warn('OpenStreetMap ground layer unavailable; using the built-in stylized map.', error);
+        }
+      });
 
     const groundMesh = new THREE.Mesh(groundGeo, terrainMat);
     groundMesh.receiveShadow = true;
-    groundMesh.name = 'Požarevac Centar (Satelitska Mapa)';
+    groundMesh.name = 'Požarevac Centar (Map Podloga)';
     scene.add(groundMesh);
 
     // 5. 3D RAISED SIDEWALKS & STREET CURBS ALONG TABAČKA ČARŠIJA
@@ -944,6 +979,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       traffic.dispose();
       policeAndDogs.dispose();
       weatherMgr.dispose();
+      groundRequestCancelled = true;
+      groundAbortController.abort();
+      terrainMaterialRef.current?.dispose();
+      osmGroundTextureRef.current?.dispose();
+      classicGroundTextureRef.current?.dispose();
+      terrainMaterialRef.current = null;
+      osmGroundTextureRef.current = null;
+      classicGroundTextureRef.current = null;
       if (gardenPlotGroupRef.current) {
         scene.remove(gardenPlotGroupRef.current);
         disposePlantPlotModels(gardenPlotGroupRef.current);
@@ -1027,9 +1070,45 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [sphereColor]);
 
+  const toggleGroundLayer = () => {
+    if (!osmMapReady) return;
+    const nextLayer = groundLayer === 'osm' ? 'classic' : 'osm';
+    const nextTexture = nextLayer === 'osm' ? osmGroundTextureRef.current : classicGroundTextureRef.current;
+    const material = terrainMaterialRef.current;
+    if (!nextTexture || !material) return;
+    setGroundLayer(nextLayer);
+    material.map = nextTexture;
+    material.needsUpdate = true;
+    audioDsp.playRotateTick();
+  };
+
   return (
     <div className="relative w-full h-full select-none">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <div className="pointer-events-auto absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 font-mono">
+        <button
+          type="button"
+          onClick={toggleGroundLayer}
+          disabled={!osmMapReady}
+          aria-pressed={groundLayer === 'osm'}
+          className="rounded-lg border border-emerald-400/50 bg-slate-950/85 px-2.5 py-1.5 text-[10px] font-black tracking-wide text-emerald-200 shadow-lg backdrop-blur hover:bg-slate-900 disabled:cursor-wait disabled:opacity-70"
+          title="Smenjuje lokalne OSM ulice i obrise zgrada sa umetničkom podlogom igre"
+        >
+          {!osmMapReady
+            ? osmMapFailed ? 'OSM NEDOSTUPAN · STILIZOVANA' : 'MAPA: UČITAVAM OSM…'
+            : groundLayer === 'osm' ? 'PODLOGA: OSM VEKTORI' : 'PODLOGA: STILIZOVANA'}
+        </button>
+        {osmMapReady && groundLayer === 'osm' && (
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md bg-slate-950/80 px-2 py-1 text-[9px] text-slate-200 underline decoration-emerald-400/70 underline-offset-2 shadow backdrop-blur"
+          >
+            © OpenStreetMap contributors · ODbL
+          </a>
+        )}
+      </div>
     </div>
   );
 };

@@ -25,7 +25,7 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
   playerPos,
   onTeleportToPoi,
 }) => {
-  const [selectedMapMode, setSelectedMapMode] = useState<'roadmap' | 'satellite'>('roadmap');
+  const [selectedMapMode, setSelectedMapMode] = useState<'roadmap' | 'satellite' | 'hybrid'>('roadmap');
   const [searchQuery, setSearchQuery] = useState('');
 
   if (!isOpen) return null;
@@ -94,6 +94,19 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
             >
               🛰️ Satelit
             </button>
+            <button
+              onClick={() => {
+                setSelectedMapMode('hybrid');
+                audioDsp.playRotateTick();
+              }}
+              className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                selectedMapMode === 'hybrid'
+                  ? 'bg-emerald-500 text-slate-950 font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Layers className="mr-1 inline-block h-3 w-3" />Hibrid
+            </button>
           </div>
 
           <div className="relative flex-1 min-w-[200px]">
@@ -119,7 +132,7 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
             allowFullScreen
             referrerPolicy="no-referrer-when-downgrade"
             src={`https://www.google.com/maps?q=${currentLat},${currentLng}&z=16&output=embed&t=${
-              selectedMapMode === 'satellite' ? 'k' : 'm'
+              selectedMapMode === 'satellite' ? 'k' : selectedMapMode === 'hybrid' ? 'h' : 'm'
             }`}
           />
           <div className="absolute bottom-2 left-2 bg-slate-900/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-700 text-[10px] text-emerald-400 font-bold">
