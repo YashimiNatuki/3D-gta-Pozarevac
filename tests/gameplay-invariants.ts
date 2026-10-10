@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
   DynamicMissionEngine,
+  CITY_DISTRICT_MISSION_IDS,
+  CITY_DISTRICT_MISSIONS,
   INITIAL_DYNAMIC_MISSIONS,
   INITIAL_TURF_ZONES,
   POZAREVAC_STORY_CAMPAIGN,
@@ -112,6 +114,13 @@ assert.deepEqual(getModularBuildingBounds({ width: 8, height: 10, depth: 6, body
 assert.equal(shouldAutoActivatePoi(VASARISTE_POI_ID, undefined), true);
 assert.equal(shouldAutoActivatePoi(VASARISTE_POI_ID, 'hipodrom_pozarevac'), true);
 assert.equal(shouldAutoActivatePoi('hipodrom_pozarevac', undefined), false);
+assert.equal(new Set(CITY_DISTRICT_MISSION_IDS).size, CITY_DISTRICT_MISSION_IDS.length);
+assert.equal(CITY_DISTRICT_MISSIONS.length, CITY_DISTRICT_MISSION_IDS.length);
+assert.ok(CITY_DISTRICT_MISSIONS.every((mission) => mission.checkpoints && mission.checkpoints.length >= 2));
+assert.ok(CITY_DISTRICT_MISSIONS.every((mission) => mission.checkpoints?.every((checkpoint) => Number.isFinite(checkpoint.x) && Number.isFinite(checkpoint.z))));
+assert.ok(CITY_DISTRICT_MISSION_IDS.every((id) => INITIAL_DYNAMIC_MISSIONS.some((mission) => mission.id === id)));
+const migratedCatalog = reconcileMissionCatalog([{ ...INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_1')!, status: 'completed' }]);
+assert.ok(CITY_DISTRICT_MISSION_IDS.every((id) => migratedCatalog.some((mission) => mission.id === id)), 'old saves receive citywide missions');
 assert.equal(canInteractWithPoi({ id: VASARISTE_POI_ID, at: 10_000 }, VASARISTE_POI_ID, 11_799), false);
 assert.equal(canInteractWithPoi({ id: VASARISTE_POI_ID, at: 10_000 }, VASARISTE_POI_ID, 11_800), true);
 

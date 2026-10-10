@@ -176,6 +176,65 @@ export function getStoryCampaignMission(chapter: number): DynamicMission | null 
   return mission ? { ...mission, checkpoints: mission.checkpoints?.map((checkpoint) => ({ ...checkpoint })) } : null;
 }
 
+export const CITY_DISTRICT_MISSION_IDS = [
+  'city_djura_busije_route', 'city_tabacka_korzo_signal', 'city_buvljak_park_watch',
+  'city_park_cacalica_spore', 'city_cacalica_tulba_ridge', 'city_tulba_hipodrom_caravan',
+  'city_hipodrom_vasariste_route',
+] as const;
+
+/** One visible route contract per major district; this supplements, rather than replaces, the existing missions. */
+export const CITY_DISTRICT_MISSIONS: DynamicMission[] = [
+  {
+    id: 'city_djura_busije_route', title: 'Đura → Busije: prvi gradski krug', type: 'landmark_scout', giver: GANG_CHARACTERS.sale,
+    locationName: 'Đura → Busije', targetCoords: { x: -1, z: 0 }, description: 'Potvrdi lokalnu rutu od Đure do Busija i otključaj zapadni rub grada.',
+    dialogueText: 'Sale: Ne vrti se samo oko stadiona. Kreni iz Đure, potvrdi Busije i otvori celu zapadnu stranu grada.', completionText: 'Đura i Busije su povezani u radarsku rutu.', requiredTimeOfDay: 'any',
+    checkpoints: [{ label: 'Potvrdi polaznu tačku u Đuri', x: -1, z: 0 }, { label: 'Stigni do vidikovca u Busijama', x: -25, z: -4 }],
+    rewardCash: 1900, rewardXp: 300, rewardRespect: 12, rewardGearName: 'Busije Route Patch', status: 'available', isDaily: true,
+  },
+  {
+    id: 'city_tabacka_korzo_signal', title: 'Tabačka → Korzo: signal kroz centar', type: 'delivery', giver: GANG_CHARACTERS.sale,
+    locationName: 'Tabačka Čaršija → Stari Korzo', targetCoords: { x: 0, z: -10 }, description: 'Preuzmi fiktivni signalni paket na Tabačkoj i dostavi ga na Korzo.',
+    dialogueText: 'Sale: Centar nije samo dekoracija. Pokupi signal na Tabačkoj, pređi do Korzoa i upiši rutu u gradsku mrežu.', completionText: 'Centralni signal je potvrđen, a Korzo je dodat u aktivnu mrežu.', requiredTimeOfDay: 'night', timeLimitSeconds: 360,
+    checkpoints: [{ label: 'Preuzmi signal na Tabačkoj', x: 0, z: -10 }, { label: 'Dostavi signal na Starom Korzou', x: 9, z: -4 }],
+    rewardCash: 2600, rewardXp: 430, rewardRespect: 16, rewardGearName: 'Korzo Signal Key', status: 'available', isDaily: true,
+  },
+  {
+    id: 'city_buvljak_park_watch', title: 'Buvljak → Gradski Park: tiha osmatračnica', type: 'landmark_scout', giver: GANG_CHARACTERS.dzeki,
+    locationName: 'Buvljak kod Pruge → Gradski Park', targetCoords: { x: -18, z: -14 }, description: 'Potvrdi sigurnu pešačku trasu između pijace i zelene zone.',
+    dialogueText: 'Džeki laje sa pruge: prati miris kroz park, ali ne gubi marker. Svaki deo grada mora da ima svoju sigurnu rutu.', completionText: 'Buvljak i Gradski Park sada imaju potvrđenu sigurnu trasu.', requiredTimeOfDay: 'any',
+    checkpoints: [{ label: 'Pokupi trag kod Buvljaka', x: -18, z: -14 }, { label: 'Osmotri aleju u Gradskom Parku', x: -11, z: 7 }],
+    rewardCash: 2100, rewardXp: 340, rewardRespect: 14, rewardGearName: 'Park Watch Collar', status: 'available', isDaily: true,
+  },
+  {
+    id: 'city_park_cacalica_spore', title: 'Gradski Park → Čačalica: botanički transfer', type: 'plant_harvest', giver: GANG_CHARACTERS.maja,
+    locationName: 'Gradski Park → Čačalica', targetCoords: { x: -11, z: 7 }, description: 'Prenesi fiktivnu botaničku sporu iz Parka do Čačalice i potvrdi planinsku baštu.',
+    dialogueText: 'Maja: Park je početak, Čačalica završetak. Nema instant teleportovanja — ruta mora da se pređe i evidentira.', completionText: 'Botanička veza Park–Čačalica je upisana u baštenski sistem.', requiredTimeOfDay: 'day', timeLimitSeconds: 900,
+    checkpoints: [{ label: 'Preuzmi sporu u Gradskom Parku', x: -11, z: 7 }, { label: 'Predaj sporu na Čačalici', x: 66.6, z: 49.4 }],
+    rewardCash: 3800, rewardXp: 620, rewardRespect: 24, rewardGearName: 'Čačalica Seed Vault', status: 'available', isDaily: false,
+  },
+  {
+    id: 'city_cacalica_tulba_ridge', title: 'Čačalica → Tulba: greben i istorija', type: 'landmark_scout', giver: GANG_CHARACTERS.yashime,
+    locationName: 'Čačalica → Etno Park Tulba', targetCoords: { x: 66.6, z: 49.4 }, description: 'Poveži vidikovac Čačalice sa Tulbom i potvrdi istočni greben kao prohodan sektor.',
+    dialogueText: 'Yashime: Pravi grad nije samo neon. Idi sa Čačalice do Tulbe i napravi mapu koja ima smisla.', completionText: 'Istočni greben je potvrđen, a Tulba dobija svoj route contract.', requiredTimeOfDay: 'any',
+    checkpoints: [{ label: 'Skeniraj vidikovac na Čačalici', x: 66.6, z: 49.4 }, { label: 'Potvrdi etno zonu Tulba', x: 12, z: 29 }],
+    rewardCash: 2900, rewardXp: 480, rewardRespect: 20, rewardGearName: 'Tulba Ridge Token', status: 'available', isDaily: false,
+  },
+  {
+    id: 'city_tulba_hipodrom_caravan', title: 'Tulba → Hipodrom: karavan bez prečice', type: 'delivery', giver: GANG_CHARACTERS.sale,
+    locationName: 'Etno Park Tulba → Hipodrom', targetCoords: { x: 12, z: 29 }, description: 'Preuzmi fiktivni karavanski paket u Tulbi i dostavi ga na Hipodrom kroz označenu rutu.',
+    dialogueText: 'Sale: Tulba i Hipodrom su dva različita ritma. Drži se checkpoint-a i ne preskači pola grada.', completionText: 'Karavan je stigao na Hipodrom, a istočna ruta je spremna.', requiredTimeOfDay: 'any', timeLimitSeconds: 720,
+    checkpoints: [{ label: 'Preuzmi karavanski paket na Tulbi', x: 12, z: 29 }, { label: 'Isporuči paket na Hipodromu', x: -28, z: 26 }],
+    rewardCash: 4200, rewardXp: 680, rewardRespect: 28, rewardGearName: 'Hipodrom Caravan Badge', status: 'available', isDaily: true,
+  },
+  {
+    id: 'city_hipodrom_vasariste_route', title: 'Hipodrom → Vašarište: završni gradski prsten', type: 'landmark_scout', giver: GANG_CHARACTERS.yashime,
+    locationName: 'Hipodrom → Vašarište', targetCoords: { x: -28, z: 26 }, description: 'Zatvori gradski prsten obilaskom Hipodroma i Vašarišta; to je jedna ruta, ne jedina misija u gradu.',
+    dialogueText: 'Yashime: Sad kad si video ostale sektore, zatvori prsten preko Hipodroma do Vašarišta.', completionText: 'Glavni gradski prsten je potvrđen. Svi sektori imaju aktivne ugovore.', requiredTimeOfDay: 'any',
+    checkpoints: [{ label: 'Potvrdi ulaz na Hipodrom', x: -28, z: 26 }, { label: 'Završi prsten na Vašarištu', x: -24, z: 12 }],
+    rewardCash: 4700, rewardXp: 760, rewardRespect: 32, rewardGearName: 'Požarevac City Ring', status: 'available', isDaily: false,
+  },
+];
+
 export const INITIAL_TURF_ZONES: TurfZone[] = [
   {
     id: 'tz_tabacka',
@@ -277,6 +336,7 @@ export const INITIAL_TURF_ZONES: TurfZone[] = [
 ];
 
 export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
+  ...CITY_DISTRICT_MISSIONS,
   {
     id: 'dm_1',
     title: 'Noćna Dostava za Ortaka Saleta',
