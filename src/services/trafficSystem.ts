@@ -8,6 +8,10 @@ export interface Vehicle {
   mesh: THREE.Group;
   type: 'sedan' | 'taxi' | 'suv' | 'sports';
   speed: number;
+  velocity: THREE.Vector3;
+  steering: number;
+  driftAngle: number;
+  policeTuning: boolean;
   currentWaypointIndex: number;
   path: THREE.Vector3[];
   wheels: THREE.Mesh[];
@@ -19,6 +23,7 @@ export class TrafficSystem {
   private scene: THREE.Scene;
   private lastDriverVoiceTime = 0;
   private lastCrashSoundTime = 0;
+  private pursuitMode = false;
   private buildingHash = new SpatialHash2D<typeof CITY_BUILDING_BOXES[number]>(8);
 
   // Mathematically validated routes adhering strictly to Požarevac avenues,
@@ -208,12 +213,20 @@ export class TrafficSystem {
         mesh: group,
         type,
         speed: 4.5 + Math.random() * 2.5,
+        velocity: new THREE.Vector3(),
+        steering: 0,
+        driftAngle: 0,
+        policeTuning: type === 'sports',
         currentWaypointIndex: startWpIndex,
         path,
         wheels,
         headlights: lights,
       });
     });
+  }
+
+  public setPursuitMode(enabled: boolean) {
+    this.pursuitMode = enabled;
   }
 
   public update(delta: number, playerPos: THREE.Vector3) {
@@ -227,11 +240,13 @@ export class TrafficSystem {
 
       // Check distance to player
       const distToPlayer = v.mesh.position.distanceTo(playerPos);
-      let effectiveSpeed = v.speed;
+      const targetSpeed = v.speed * (this.pursuitMode && v.policeTuning ? 1.32 : 1);
+      let effectiveSpeed = targetSpeed;
 
       // 1. Direct Physical Collision / Impact with Player (< 1.45m)
       if (distToPlayer < 1.45) {
         effectiveSpeed = 0; // Emergency brake on impact
+        v.velocity.multiplyScalar(Math.max(0, 1 - delta * 12));
         if (now - this.lastCrashSoundTime > 6500) {
           this.lastCrashSoundTime = now;
           this.lastDriverVoiceTime = now;
@@ -263,8 +278,29 @@ export class TrafficSystem {
       } else {
         dir.normalize();
 
+        // Kinematic bicycle model with bounded tire slip. Police-tuned cars retain
+        // more longitudinal speed under steering and visibly rotate into a drift.
+        const targetAngle = Math.atan2(dir.x, dir.z);
+        const angleError = Math.atan2(
+          Math.sin(targetAngle - v.mesh.rotation.y),
+          Math.cos(targetAngle - v.mesh.rotation.y),
+        );
+        const steeringLimit = v.policeTuning ? 0.78 : 0.58;
+        v.steering = THREE.MathUtils.clamp(angleError * 1.8, -steeringLimit, steeringLimit);
+        const speedRatio = Math.min(1, v.velocity.length() / Math.max(0.1, targetSpeed));
+        const desiredForward = new THREE.Vector3(Math.sin(v.mesh.rotation.y), 0, Math.cos(v.mesh.rotation.y));
+        const desiredVelocity = desiredForward.multiplyScalar(effectiveSpeed);
+        const acceleration = v.policeTuning ? 18 : 12;
+        v.velocity.lerp(desiredVelocity, Math.min(1, acceleration * delta));
+        const side = new THREE.Vector3(Math.cos(v.mesh.rotation.y), 0, -Math.sin(v.mesh.rotation.y));
+        const lateralVelocity = side.dot(v.velocity);
+        const grip = (v.policeTuning ? 7.5 : 10.5) - Math.abs(v.steering) * (v.policeTuning ? 5.5 : 3.5);
+        v.velocity.addScaledVector(side, -lateralVelocity * Math.min(1, Math.max(0.5, grip) * delta));
+        v.driftAngle = THREE.MathUtils.lerp(v.driftAngle, v.steering * speedRatio * 0.42, Math.min(1, delta * 8));
+        v.mesh.rotation.y += v.steering * (v.policeTuning ? 2.7 : 2.2) * delta;
+
         // Safety steering: verify forward ray doesn't intersect building boxes
-        const nextPos = v.mesh.position.clone().addScaledVector(dir, effectiveSpeed * delta);
+        const nextPos = v.mesh.position.clone().addScaledVector(v.velocity, delta);
         let safeToMove = true;
         const nearbyBuildings = this.buildingHash.query({
           minX: nextPos.x - 0.8,
@@ -290,9 +326,8 @@ export class TrafficSystem {
           v.mesh.position.copy(nextPos);
         }
 
-        // Orient vehicle towards movement direction (smooth steering interpolation)
-        const targetAngle = Math.atan2(dir.x, dir.z);
-        v.mesh.rotation.y = THREE.MathUtils.lerp(v.mesh.rotation.y, targetAngle, 0.12);
+        // Body yaw follows the chassis while the visual body keeps a small drift bias.
+        v.mesh.rotation.y += v.driftAngle * delta;
 
         // Spin wheels
         v.wheels.forEach((w) => {

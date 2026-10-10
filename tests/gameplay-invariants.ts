@@ -39,6 +39,25 @@ import {
 } from '../src/services/streetEconomy';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../src/services/rendererPerformance';
 import { SpatialHash2D } from '../src/services/spatialHash';
+import { GameDirector } from '../src/services/gameDirector';
+
+const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
+const calmFrame = director.tick({ now: 0, playerSpeed: 0, wantedLevel: 0, nearbyVehicles: 0, nearbyCivilians: 0, weather: 'Rain' });
+assert.equal(calmFrame.phase, 'calm');
+assert.equal(calmFrame.signal, null);
+const pursuitFrame = director.tick({
+  now: 1_001, playerSpeed: 8, wantedLevel: 3, nearbyVehicles: 5, nearbyCivilians: 2,
+  activeMissionType: 'escape_police', weather: 'Rain',
+});
+assert.equal(pursuitFrame.phase, 'pursuit');
+assert.ok(pursuitFrame.policePressure > 0.5);
+assert.equal(pursuitFrame.signal?.type, 'escape_window');
+assert.match(pursuitFrame.signal?.id ?? '', /^director-42-1$/);
+const stableFrame = director.tick({
+  now: 1_500, playerSpeed: 4, wantedLevel: 3, nearbyVehicles: 5, nearbyCivilians: 2,
+  activeMissionType: 'escape_police', weather: 'Rain',
+});
+assert.equal(stableFrame.signal, null);
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',

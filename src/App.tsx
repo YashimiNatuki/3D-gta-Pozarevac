@@ -37,6 +37,7 @@ import {
 } from './services/missionRules';
 import { PickedGoogleFile } from './services/googlePicker';
 import { isGameProgressData, readGameProgress, writeGameProgress, type GameProgressData } from './services/gameProgress';
+import { generateMissionAtPosition } from './services/aiMissionGenerator';
 import { CctvOverlay } from './components/CctvOverlay';
 import {
   CctvSystem,
@@ -129,6 +130,7 @@ export function App() {
   const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
   const [marketFeedback, setMarketFeedback] = useState<string | null>(null);
   const resolvingMissionIdsRef = useRef(new Set<string>());
+  const nextAiMissionAtRef = useRef(0);
   const [turfZones, setTurfZones] = useState<TurfZone[]>(() =>
     reconcileTurfZones(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES)
   );
@@ -368,6 +370,34 @@ export function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Gemini AI Director periodically turns the player's live Požarevac sector into
+  // a playable contract. A cooldown prevents network churn while the 3D loop updates.
+  useEffect(() => {
+    if (!hasEnteredGame || Date.now() < nextAiMissionAtRef.current) return;
+    nextAiMissionAtRef.current = Date.now() + 45_000;
+    let cancelled = false;
+    void generateMissionAtPosition({
+      x: playerPos.x,
+      z: playerPos.z,
+      heading: playerPos.heading,
+      weather,
+      timeOfDay,
+      wantedLevel: characterStats.wantedLevel || 0,
+      respect: characterStats.respect,
+    }).then((mission) => {
+      if (cancelled || !mission) return;
+      setDynamicMissions((current) => {
+        if (current.some((existing) => existing.id === mission.id)) return current;
+        const trimmed = current.length >= 250 ? current.slice(-249) : current;
+        return [...trimmed, mission];
+      });
+      setMissionFeedback(`AI Director: novi ugovor u sektoru ${mission.locationName}.`);
+    }).catch(() => {
+      // Network failure never blocks play; the server also has a deterministic fallback.
+    });
+    return () => { cancelled = true; };
+  }, [hasEnteredGame, playerPos.x, playerPos.z, playerPos.heading, weather, timeOfDay, characterStats.wantedLevel, characterStats.respect]);
 
   const handleToggleAudio = () => {
     const newState = audioDsp.toggleBeat();

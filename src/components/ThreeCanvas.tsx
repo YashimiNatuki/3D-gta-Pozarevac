@@ -23,6 +23,7 @@ import { PlantPlot } from '../services/streetEconomy';
 import { CctvSystem } from '../services/cctvSystem';
 import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../services/rendererPerformance';
+import { GameDirector } from '../services/gameDirector';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -51,6 +52,7 @@ export interface ThreeCanvasProps {
   customConfig?: CustomCharacterConfig;
   isCctvActive?: boolean;
   cctvSystem?: CctvSystem;
+  onDirectorSignal?: (signal: { id: string; type: string; intensity: number; reason: string }) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -80,6 +82,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   customConfig,
   isCctvActive = false,
   cctvSystem,
+  onDirectorSignal,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const cubeMeshRef = useRef<THREE.Mesh | null>(null);
@@ -91,6 +94,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
+  const directorRef = useRef<GameDirector | null>(null);
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -513,6 +517,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 11. POLICE CRUISERS, STREET DOGS & SIDEWALK CITIZENS
     const policeAndDogs = new PoliceAndDogsSystem(scene);
     policeAndDogsRef.current = policeAndDogs;
+    directorRef.current = new GameDirector({ seed: 7302026, cooldownMs: 18_000 });
 
     // 12. 3D INTERACTIVE POI BEACONS
     const poiGroup = new THREE.Group();
@@ -779,7 +784,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       audioDsp.updateSpatialCityAmbience(controller.position);
 
       // Update AI Traffic System (Slows down near player)
+      traffic.setPursuitMode(wantedLevelRef.current > 0);
       traffic.update(delta, controller.position);
+
+      // HQ AI Director fuses live telemetry into deterministic, bounded gameplay signals.
+      const activeMission = dynamicMissionsRef.current.find((mission) => mission.status === 'active');
+      const directorFrame = directorRef.current?.tick({
+        now: currentTime,
+        playerSpeed: controller.isMoving ? (controller.isSprinting ? 8.8 : 4.8) : 0,
+        wantedLevel: wantedLevelRef.current,
+        nearbyVehicles: traffic.vehicles.filter((vehicle) => vehicle.mesh.position.distanceTo(controller.position) < 18).length,
+        nearbyCivilians: policeAndDogs.pedestrians.filter((pedestrian) => pedestrian.group.position.distanceTo(controller.position) < 18).length,
+        activeMissionType: activeMission?.type,
+        weather,
+      });
+      if (directorFrame?.signal) onDirectorSignal?.(directorFrame.signal);
 
       // Update Police Cruisers, Street Dogs & Sidewalk Citizens
       policeAndDogs.update(delta, controller.position, wantedLevelRef.current, camera.position);
@@ -788,7 +807,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (wantedLevelRef.current > 0) {
         const strobeState = Math.sin(elapsedTime * 14) > 0;
         pursuitAtmosphereLight.color.setHex(strobeState ? 0xff0033 : 0x0066ff);
-        pursuitAtmosphereLight.intensity = 4.0 + wantedLevelRef.current * 3.5;
+        pursuitAtmosphereLight.intensity = 4.0 + wantedLevelRef.current * 3.5 + (directorFrame?.policePressure ?? 0) * 1.5;
         pursuitAtmosphereLight.position.set(controller.position.x, 10, controller.position.z);
       } else {
         pursuitAtmosphereLight.intensity = 0;

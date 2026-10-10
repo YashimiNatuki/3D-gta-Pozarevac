@@ -159,6 +159,76 @@ Maksimalno 2 rečenice. Stil: 2Pac Thug Life meets srpski noćni triler, energij
   }
 });
 
+// 1f. Gemini mission director: location-aware, schema-constrained Požarevac contracts.
+app.post('/api/gemini/generate-mission', async (req, res) => {
+  const context = req.body?.context || {};
+  const x = Number.isFinite(Number(context.x)) ? Math.max(-32, Math.min(32, Number(context.x))) : 0;
+  const z = Number.isFinite(Number(context.z)) ? Math.max(-32, Math.min(32, Number(context.z))) : 0;
+  const fallback = {
+    id: `ai_${Date.now()}_${Math.round((x + 32) * 10)}_${Math.round((z + 32) * 10)}`,
+    title: 'AI izviđanje: signal sa Požarevca',
+    type: 'delivery',
+    giver: { name: 'AiChatBratina', role: 'friend', avatar: '◈', phoneTag: 'BRATINA AI' },
+    locationName: 'Požarevac — trenutni sektor',
+    targetCoords: { x, z },
+    description: 'Preuzmi signal u trenutnom sektoru, zatim ga dostavi na Tabačku Čaršiju.',
+    dialogueText: 'AI je očitao anomaliju u tvom sektoru. Nema čekanja, rođo brate.',
+    completionText: 'Signal je dostavljen. Grad menja ponašanje oko tebe.',
+    requiredTimeOfDay: 'any',
+    rewardCash: 1250,
+    rewardXp: 240,
+    rewardRespect: 8,
+    timeLimitSeconds: 420,
+    checkpoints: [{ label: 'Očitaj signal u trenutnom sektoru', x, z }, { label: 'Dostavi signal na Tabačku', x: 0, z: -10 }],
+    status: 'available',
+    isDaily: false,
+  };
+
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+    const prompt = `Generiši jedan GTA-style, potpuno fikcionalni ugovor za igru smeštenu u Požarevac.
+Igrač je na lokalnim Three.js koordinatama x=${x}, z=${z}; vreme=${context.timeOfDay || 'day'}, vreme=${context.weather || 'Clear'}, wanted=${context.wantedLevel || 0}, respekt=${context.respect || 0}.
+Vrati isključivo validan JSON objekat sa poljima: title, type (delivery|hit|escape_police|turf_war|plant_harvest|trade_flip), locationName, description, dialogueText, completionText, requiredTimeOfDay (any|dawn|day|dusk|night), rewardCash (number), rewardXp (number), rewardRespect (number), timeLimitSeconds (number), checkpoints (niz od najmanje 2 objekta sa label,x,z).
+Koordinate moraju biti u opsegu -30..30, sadržaj je fikcionalan i bez realnih uputstava za kriminal. Stil: filmski srpski ulični triler, kratko i jasno.`;
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseMimeType: 'application/json' },
+    });
+    const parsed = JSON.parse(response.text || '{}');
+    const allowedTypes = new Set(['delivery', 'hit', 'escape_police', 'turf_war', 'plant_harvest', 'trade_flip']);
+    const checkpoints = Array.isArray(parsed.checkpoints) ? parsed.checkpoints.slice(0, 4).filter((point: any) =>
+      typeof point?.label === 'string' && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.z))) : [];
+    if (typeof parsed.title !== 'string' || checkpoints.length < 2 || !allowedTypes.has(parsed.type)) {
+      res.json({ mission: fallback });
+      return;
+    }
+    const clamp = (value: unknown) => Math.max(-30, Math.min(30, Number(value) || 0));
+    const mission = {
+      ...fallback,
+      id: `ai_${Date.now()}_${Math.round(x * 10)}_${Math.round(z * 10)}`,
+      title: parsed.title.slice(0, 100),
+      type: parsed.type,
+      locationName: typeof parsed.locationName === 'string' ? parsed.locationName.slice(0, 100) : fallback.locationName,
+      description: typeof parsed.description === 'string' ? parsed.description.slice(0, 320) : fallback.description,
+      dialogueText: typeof parsed.dialogueText === 'string' ? parsed.dialogueText.slice(0, 240) : fallback.dialogueText,
+      completionText: typeof parsed.completionText === 'string' ? parsed.completionText.slice(0, 240) : fallback.completionText,
+      requiredTimeOfDay: ['any', 'dawn', 'day', 'dusk', 'night'].includes(parsed.requiredTimeOfDay) ? parsed.requiredTimeOfDay : 'any',
+      rewardCash: Math.max(250, Math.min(10000, Number(parsed.rewardCash) || fallback.rewardCash)),
+      rewardXp: Math.max(50, Math.min(2500, Number(parsed.rewardXp) || fallback.rewardXp)),
+      rewardRespect: Math.max(1, Math.min(100, Number(parsed.rewardRespect) || fallback.rewardRespect)),
+      timeLimitSeconds: Math.max(120, Math.min(1800, Number(parsed.timeLimitSeconds) || fallback.timeLimitSeconds)),
+      targetCoords: { x: clamp(checkpoints[0].x), z: clamp(checkpoints[0].z) },
+      checkpoints: checkpoints.map((point: any) => ({ label: point.label.slice(0, 100), x: clamp(point.x), z: clamp(point.z) })),
+    };
+    res.json({ mission });
+  } catch (err: any) {
+    console.warn('[Gemini Mission Generator Fallback]', err?.message || 'unknown error');
+    res.json({ mission: fallback });
+  }
+});
+
 // 1d. Gemini API route for speech-to-text audio transcription using gemini-3.5-transcribe
 app.post('/api/transcribe', async (req, res) => {
   try {
