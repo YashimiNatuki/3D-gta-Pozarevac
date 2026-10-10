@@ -29,4 +29,4 @@
 - [x] Include the catalog in `INITIAL_DYNAMIC_MISSIONS` without replacing existing missions.
 - [x] Add invariant assertions for district coverage, unique IDs and valid checkpoints.
 - [x] Run lint, invariants, build and diff hygiene.
-- [ ] Commit and push only to `feat/pozarevac-landmarks-3d`.
+- [x] Commit and push only to `feat/pozarevac-landmarks-3d`.
