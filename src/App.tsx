@@ -36,7 +36,6 @@ import {
   recordTradeSale,
 } from './services/missionRules';
 import { PickedGoogleFile } from './services/googlePicker';
-import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
 import { isGameProgressData, readGameProgress, writeGameProgress, type GameProgressData } from './services/gameProgress';
 import { CctvOverlay } from './components/CctvOverlay';
 import {
@@ -69,6 +68,8 @@ const GoogleDocsModal = React.lazy(() => import('./components/GoogleDocsModal').
 const GoogleMapsModal = React.lazy(() => import('./components/GoogleMapsModal').then((module) => ({ default: module.GoogleMapsModal })));
 const GooglePickerModal = React.lazy(() => import('./components/GooglePickerModal').then((module) => ({ default: module.GooglePickerModal })));
 const MasterPlanModal = React.lazy(() => import('./components/MasterPlanModal').then((module) => ({ default: module.MasterPlanModal })));
+
+const loadFirestoreCapability = () => import('./services/firestoreDb');
 
 const ThreeCanvas = React.lazy(() =>
   import('./components/ThreeCanvas').then((module) => ({ default: module.ThreeCanvas }))
@@ -251,7 +252,7 @@ export function App() {
     let cancelled = false;
     setProgressHydrated(false);
 
-    void loadPlayerProgressFromFirestore(currentUser.uid)
+    void loadFirestoreCapability().then(({ loadPlayerProgressFromFirestore }) => loadPlayerProgressFromFirestore(currentUser.uid))
       .then((cloudSave) => {
         if (cancelled || !cloudSave) return;
         setCharacterStats(cloudSave.stats);
@@ -307,6 +308,7 @@ export function App() {
       saving = true;
       setCloudProgressStatus('saving');
       try {
+        const { savePlayerProgressToFirestore } = await loadFirestoreCapability();
         await savePlayerProgressToFirestore(
           currentUser.uid,
           currentUser.email ?? '',

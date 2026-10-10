@@ -1,16 +1,10 @@
 // [AiChatBratina v10.0] - Persistent Firestore Database Integration
 import {
   getFirestore,
-  collection,
   doc,
   setDoc,
   getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  orderBy,
-  limit,
-} from 'firebase/firestore';
+} from 'firebase/firestore/lite';
 import { initializeApp, getApps } from 'firebase/app';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { CharacterStats } from './characterProgress';

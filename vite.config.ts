@@ -9,8 +9,8 @@ import {
   isAllowedGoogleVideoUri,
   isValidVideoOperationName,
   readResponseBodyLimited,
-} from './src/services/videoDownloadSecurity';
-import { parseSingleByteRange } from './src/services/videoRange';
+} from './src/services/videoDownloadSecurity.js';
+import { parseSingleByteRange } from './src/services/videoRange.js';
 
 dotenv.config();
 
@@ -321,7 +321,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), geminiChatApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {
