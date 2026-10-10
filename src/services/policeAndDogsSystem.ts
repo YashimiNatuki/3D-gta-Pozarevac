@@ -43,6 +43,7 @@ export interface PoliceCar {
 
 export interface Pedestrian {
   group: THREE.Group;
+  gender: 'male' | 'female';
   legs: THREE.Mesh[];
   arms: THREE.Mesh[];
   path: THREE.Vector3[];
@@ -55,6 +56,7 @@ export interface Pedestrian {
   bubbleTexture: THREE.CanvasTexture;
   lastMoodChangeTime: number;
   lastSpokenTime: number;
+  nextBanterDelayMs: number;
 }
 
 export class PoliceAndDogsSystem {
@@ -355,6 +357,7 @@ export class PoliceAndDogsSystem {
     const pedConfigs = [
       {
         name: 'Milan (Tabačka)',
+        gender: 'male' as const,
         color: 0x0284c7,
         path: [
           new THREE.Vector3(2.5, 0, -18),
@@ -364,6 +367,7 @@ export class PoliceAndDogsSystem {
       },
       {
         name: 'Jelena (Korzo)',
+        gender: 'female' as const,
         color: 0xec4899,
         path: [
           new THREE.Vector3(-3.5, 0, 12),
@@ -373,6 +377,7 @@ export class PoliceAndDogsSystem {
       },
       {
         name: 'Goran (Čačalica)',
+        gender: 'male' as const,
         color: 0x10b981,
         path: [
           new THREE.Vector3(8, 0, -3),
@@ -382,11 +387,22 @@ export class PoliceAndDogsSystem {
       },
       {
         name: 'Bane (Centar)',
+        gender: 'male' as const,
         color: 0xf59e0b,
         path: [
           new THREE.Vector3(-10, 0, 6),
           new THREE.Vector3(-10, 0, 14),
           new THREE.Vector3(-10, 0, 6),
+        ],
+      },
+      {
+        name: 'Milica (Busije)',
+        gender: 'female' as const,
+        color: 0xa855f7,
+        path: [
+          new THREE.Vector3(-25, 0, -4),
+          new THREE.Vector3(-18, 0, -4),
+          new THREE.Vector3(-25, 0, -4),
         ],
       },
     ];
@@ -447,12 +463,14 @@ export class PoliceAndDogsSystem {
         waypointIndex: 0,
         speed: 1.4,
         name: cfg.name,
+        gender: cfg.gender,
         mood: 'chill',
         overheadBubble,
         bubbleCanvas,
         bubbleTexture,
         lastMoodChangeTime: 0,
-        lastSpokenTime: 0,
+        lastSpokenTime: performance.now() + Math.random() * 9000,
+        nextBanterDelayMs: 22000 + Math.random() * 12000,
       };
 
       this.renderPedestrianBubble(pedItem, '🕶️', 'Bratina!', '#0284c7');
@@ -674,21 +692,22 @@ export class PoliceAndDogsSystem {
         if (now - ped.lastSpokenTime > 7500) {
           ped.lastSpokenTime = now;
           audioDsp.playPedestrianBump(ped.group.position);
-          audioLocalizationManager.triggerPedestrianCollision(ped.group.position);
+          audioLocalizationManager.triggerPedestrianCollision(ped.group.position, ped.gender);
         }
       }
       // 2. High-wanted pursuit reaction (Wanted Level > 0)
       else if (distToPlayer < 4.2 && wantedLevel > 0) {
         if (now - ped.lastSpokenTime > 8000) {
           ped.lastSpokenTime = now;
-          audioLocalizationManager.playLocalizedSerbian('Beži rođo, evo murije!', ped.group.position, { emotion: 'shout' });
+          audioLocalizationManager.playLocalizedSerbian('Beži rođo, evo murije!', ped.group.position, { gender: ped.gender, emotion: 'shout' });
         }
       }
       // 3. Occasional casual street pass-by voice (moderate frequency, 20s cooldown)
       else if (distToPlayer < 3.2) {
-        if (now - ped.lastSpokenTime > 20000) {
+        if (now - ped.lastSpokenTime > ped.nextBanterDelayMs) {
           ped.lastSpokenTime = now;
-          audioLocalizationManager.triggerRandomNpcBanter(ped.group.position);
+          ped.nextBanterDelayMs = 22000 + Math.random() * 12000;
+          audioLocalizationManager.triggerRandomNpcBanter(ped.group.position, ped.gender);
         }
       }
     });

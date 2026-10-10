@@ -2,6 +2,8 @@
 // Complete 3D PannerNode Positional Audio, AudioListener, Ambience Emitters & Voice Engine
 
 export type RadioStationId = 'psytrance' | 'lofi' | 'trap' | 'news' | 'ambient' | 'binaural';
+export type NpcVoiceGender = 'male' | 'female' | 'neutral';
+type StreetShoutOptions = { gender?: NpcVoiceGender; pitch?: number; rate?: number; gain?: number };
 
 export interface RadioStationInfo {
   id: RadioStationId;
@@ -84,6 +86,9 @@ export class AudioDspEngine {
   private lastEngineSoundTime = 0;
   private lastNpcVoiceTime = 0;
   private lastAmbienceEventTime = 0;
+  private lastStreetShoutTime = 0;
+  private streetShoutQueue: Array<{ phrase: string; options: StreetShoutOptions; distance: number }> = [];
+  private streetShoutActive = false;
 
   public currentStation: RadioStationId = 'psytrance';
   private currentVolume: number = 0.35;
@@ -248,51 +253,33 @@ export class AudioDspEngine {
   ) {
     this.initContext();
     if (!this.ctx || !this.masterGain) return;
-
     const now = performance.now();
     if (now - this.lastNpcVoiceTime < 600) return;
     this.lastNpcVoiceTime = now;
 
+    const dx = npcPos.x - playerPos.x;
+    const dy = npcPos.y - playerPos.y;
+    const dz = npcPos.z - playerPos.z;
+    if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 25) return;
+
     const panner = this.createSpatialPanner(npcPos.x, npcPos.y + 1.5, npcPos.z, 2.0, 25.0);
     if (!panner) return;
-
     const audioTime = this.ctx.currentTime;
-
-    // Balkan street vocal tract formants
-    const formants = [
-      { f1: 650, f2: 1100 }, // /o/ "Bro", "Brate"
-      { f1: 750, f2: 1300 }, // /a/ "Ajde", "Šta"
-      { f1: 350, f2: 800 },  // /u/ "Tuki", "Gde"
-      { f1: 500, f2: 1800 }, // /e/ "De si"
-    ];
-    const formant = formants[Math.floor(Math.random() * formants.length)];
-
     const osc = this.ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(pitch, audioTime);
-    osc.frequency.linearRampToValueAtTime(pitch + (Math.random() * 25 - 12), audioTime + 0.22);
-
-    const filter1 = this.ctx.createBiquadFilter();
-    filter1.type = 'bandpass';
-    filter1.frequency.setValueAtTime(formant.f1, audioTime);
-    filter1.Q.setValueAtTime(6, audioTime);
-
-    const filter2 = this.ctx.createBiquadFilter();
-    filter2.type = 'bandpass';
-    filter2.frequency.setValueAtTime(formant.f2, audioTime);
-    filter2.Q.setValueAtTime(7, audioTime);
-
+    const filter = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.28, audioTime);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(pitch, audioTime);
+    osc.frequency.linearRampToValueAtTime(pitch * 0.96, audioTime + 0.22);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(650, audioTime);
+    filter.Q.setValueAtTime(0.8, audioTime);
+    gain.gain.setValueAtTime(0.055, audioTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioTime + 0.26);
-
-    osc.connect(filter1);
-    osc.connect(filter2);
-    filter1.connect(gain);
-    filter2.connect(gain);
+    osc.connect(filter);
+    filter.connect(gain);
     gain.connect(panner);
     panner.connect(this.masterGain);
-
     osc.start(audioTime);
     osc.stop(audioTime + 0.28);
   }
@@ -304,130 +291,93 @@ export class AudioDspEngine {
     this.playSpatialNpcVoice(npcPos, playerPos);
   }
 
-  /**
-   * Expressive Serbian Street Shouter:
-   * Generates natural human-like vocal shouts using multi-formant tract synthesis
-   * with authentic pitch contour and cadence. Never sounds like a robotic Windows 95 TTS!
-   */
+  /** Speak explicit Serbian callouts natively; native speech is not 3D-panned. */
   public playSerbianStreetShout(
     phrase: string,
     sourcePos?: { x: number; y: number; z: number },
-    listenerPos?: { x: number; y: number; z: number }
+    listenerPos?: { x: number; y: number; z: number },
+    options: StreetShoutOptions = {},
   ) {
-    this.initContext();
-    if (!this.ctx || !this.masterGain) return;
-
-    // Check if browser has speech synthesis available for real human voice
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        const voices = window.speechSynthesis.getVoices();
-        const bestVoice =
-          voices.find(
-            (v) =>
-              v.lang === 'sr-RS' ||
-              v.lang.startsWith('sr') ||
-              v.lang.startsWith('hr') ||
-              v.lang.startsWith('bs') ||
-              v.name.toLowerCase().includes('serbian') ||
-              v.name.toLowerCase().includes('croatian')
-          ) ||
-          voices.find(
-            (v) =>
-              v.lang.startsWith('sl') ||
-              v.lang.startsWith('mk') ||
-              v.lang.startsWith('bg') ||
-              v.lang.startsWith('ru') ||
-              v.lang.startsWith('pl') ||
-              v.lang.startsWith('it')
-          ) ||
-          voices.find((v) => v.default) ||
-          voices[0];
-
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(phrase);
-        if (bestVoice) {
-          utter.voice = bestVoice;
-        }
-        utter.rate = 1.08;
-        utter.pitch = phrase.includes('!') ? 1.15 : 1.0;
-        utter.volume = Math.min(1.0, this.currentVolume * 1.25);
-        window.speechSynthesis.speak(utter);
-      } catch (err) {
-        console.warn('[AudioDSP] Speech synthesis fallback error:', err);
-      }
-    }
-
-    // Native Web Audio DSP Procedural Balkan Street Shouter
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const now = performance.now();
-    if (now - this.lastNpcVoiceTime < 450) return;
-    this.lastNpcVoiceTime = now;
+    const listener = listenerPos ?? this.listenerPos;
+    let distance = 0;
+    if (sourcePos) {
+      const dx = sourcePos.x - listener.x;
+      const dy = sourcePos.y - listener.y;
+      const dz = sourcePos.z - listener.z;
+      distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (distance > 30) return;
+    }
+    if (now - this.lastStreetShoutTime < 3400 || this.streetShoutQueue.length >= 1) return;
+    this.lastStreetShoutTime = now;
+    this.streetShoutQueue.push({ phrase, options, distance });
+    this.pumpStreetShoutQueue();
+  }
 
-    const posX = sourcePos ? sourcePos.x : (listenerPos ? listenerPos.x + (Math.random() - 0.5) * 4 : 0);
-    const posY = sourcePos ? sourcePos.y + 1.6 : 1.6;
-    const posZ = sourcePos ? sourcePos.z : (listenerPos ? listenerPos.z + (Math.random() - 0.5) * 4 : 2);
-
-    const panner = this.createSpatialPanner(posX, posY, posZ, 2.5, 30.0);
-    if (!panner) return;
-
-    const startTime = this.ctx.currentTime + 0.02;
-    const syllables = Math.min(4, Math.max(2, Math.floor(phrase.length / 4)));
-    const baseF0 = phrase.includes('!') ? 145 : 125;
-
-    // Formant maps for Balkan vowels
-    const vowelFormants = [
-      { f1: 730, f2: 1250, q1: 5.5, q2: 6.0 }, // [a] "Brate", "Pazi"
-      { f1: 550, f2: 950,  q1: 6.0, q2: 6.5 }, // [o] "Rođo", "Alo"
-      { f1: 530, f2: 1840, q1: 5.8, q2: 7.0 }, // [e] "Bre", "Gde"
-      { f1: 320, f2: 870,  q1: 7.0, q2: 7.5 }, // [u] "Tuki", "Ulice"
-      { f1: 270, f2: 2290, q1: 7.5, q2: 8.0 }, // [i] "Vidi", "Skloni"
-    ];
-
-    for (let i = 0; i < syllables; i++) {
-      const sylStart = startTime + i * 0.14;
-      const sylDur = 0.12;
-
-      // Voiced larynx pulse (sawtooth + subtle sub)
-      const osc = this.ctx.createOscillator();
-      const subOsc = this.ctx.createOscillator();
-      const sylGain = this.ctx.createGain();
-
-      const f0 = baseF0 + (i === syllables - 1 && phrase.includes('!') ? 35 : (i % 2 === 0 ? 10 : -10));
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(f0, sylStart);
-      osc.frequency.exponentialRampToValueAtTime(f0 * 0.92, sylStart + sylDur);
-
-      subOsc.type = 'triangle';
-      subOsc.frequency.setValueAtTime(f0 * 0.5, sylStart);
-
-      // Dual formant vocal tract filters
-      const vf = vowelFormants[(i + phrase.length) % vowelFormants.length];
-      const form1 = this.ctx.createBiquadFilter();
-      form1.type = 'bandpass';
-      form1.frequency.setValueAtTime(vf.f1, sylStart);
-      form1.Q.setValueAtTime(vf.q1, sylStart);
-
-      const form2 = this.ctx.createBiquadFilter();
-      form2.type = 'bandpass';
-      form2.frequency.setValueAtTime(vf.f2, sylStart);
-      form2.Q.setValueAtTime(vf.q2, sylStart);
-
-      sylGain.gain.setValueAtTime(0.001, sylStart);
-      sylGain.gain.linearRampToValueAtTime(0.32, sylStart + 0.02);
-      sylGain.gain.exponentialRampToValueAtTime(0.001, sylStart + sylDur);
-
-      osc.connect(form1);
-      osc.connect(form2);
-      subOsc.connect(form1);
-
-      form1.connect(sylGain);
-      form2.connect(sylGain);
-      sylGain.connect(panner);
-      panner.connect(this.masterGain);
-
-      osc.start(sylStart);
-      subOsc.start(sylStart);
-      osc.stop(sylStart + sylDur + 0.01);
-      subOsc.stop(sylStart + sylDur + 0.01);
+  private async pumpStreetShoutQueue() {
+    if (this.streetShoutActive || this.streetShoutQueue.length === 0 || typeof window === 'undefined') return;
+    const speech = window.speechSynthesis;
+    if (!speech || typeof SpeechSynthesisUtterance === 'undefined') {
+      this.streetShoutQueue = [];
+      return;
+    }
+    this.streetShoutActive = true;
+    let submitted = false;
+    try {
+      let voices = speech.getVoices();
+      if (voices.length === 0) {
+        voices = await new Promise< SpeechSynthesisVoice[]>((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            window.clearTimeout(timeout);
+            speech.removeEventListener('voiceschanged', onVoicesChanged);
+            resolve(speech.getVoices());
+          };
+          const onVoicesChanged = () => finish();
+          const timeout = window.setTimeout(finish, 1200);
+          speech.addEventListener('voiceschanged', onVoicesChanged);
+        });
+      }
+      const serbian = voices.filter((voice) => voice.lang.toLowerCase().startsWith('sr'));
+      const neighboring = voices.filter((voice) => {
+        const lang = voice.lang.toLowerCase();
+        return lang.startsWith('bs') || lang.startsWith('hr');
+      });
+      const queued = this.streetShoutQueue.shift();
+      const nameLooksFemale = (candidate: SpeechSynthesisVoice) => /female|woman|zira|susan|kate|samantha|victoria|milena|jovana/i.test(`${candidate.name} ${candidate.voiceURI}`);
+      const nameLooksMale = (candidate: SpeechSynthesisVoice) => /\bmale\b|\bman\b|david|mark|daniel|alex|milan|nikola/i.test(`${candidate.name} ${candidate.voiceURI}`);
+      const pool = serbian.length ? serbian : neighboring;
+      const genderVoice = queued?.options.gender === 'female'
+        ? pool.find(nameLooksFemale)
+        : queued?.options.gender === 'male'
+          ? pool.find(nameLooksMale)
+          : undefined;
+      const voice = genderVoice ?? pool.find((candidate) => candidate.lang.toLowerCase() === 'sr-rs') ?? pool[0] ?? voices.find((candidate) => candidate.default);
+      if (queued && voice) {
+        const utterance = new SpeechSynthesisUtterance(queued.phrase);
+        utterance.lang = 'sr-RS';
+        utterance.voice = voice;
+        utterance.rate = queued.options.rate ?? 1.02;
+        const genderPitch = queued.options.gender === 'female' ? 1.14 : queued.options.gender === 'male' ? 0.93 : 1;
+        utterance.pitch = Math.max(0.65, Math.min(1.55, queued.options.pitch ?? genderPitch));
+        const distanceGain = queued.distance <= 5 ? 1 : Math.max(0.25, 1 - (queued.distance - 5) / 35);
+        utterance.volume = Math.max(0.05, Math.min(1, (queued.options.gain ?? this.currentVolume * 1.8) * distanceGain));
+        utterance.onend = () => { this.streetShoutActive = false; this.pumpStreetShoutQueue(); };
+        utterance.onerror = () => { this.streetShoutActive = false; this.pumpStreetShoutQueue(); };
+        speech.speak(utterance);
+        submitted = true;
+      }
+      // No fake oscillator substitute when no suitable language voice exists.
+    } catch (err) {
+      console.warn('[AudioDSP] Speech synthesis error:', err);
+    } finally {
+      if (!submitted) {
+        this.streetShoutActive = false;
+        if (this.streetShoutQueue.length) this.pumpStreetShoutQueue();
+      }
     }
   }
 

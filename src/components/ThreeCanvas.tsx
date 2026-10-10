@@ -25,6 +25,8 @@ import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../services/rendererPerformance';
 import { GameDirector } from '../services/gameDirector';
 import { buildPozarevacLandmarks } from '../services/pozarevacLandmarks';
+import { buildUrbanMicroLandmarks } from '../services/urbanMicroLandmarks';
+import { buildPlantPlotModels, disposePlantPlotModels } from '../services/plantPlotModels';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -96,6 +98,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
   const directorRef = useRef<GameDirector | null>(null);
+  const plantPlotsRef = useRef<PlantPlot[]>(plantPlots);
+  plantPlotsRef.current = plantPlots;
+  const onInteractWithPlotRef = useRef(onInteractWithPlot);
+  onInteractWithPlotRef.current = onInteractWithPlot;
+  const nearPlantPlotRef = useRef<PlantPlot | null>(null);
+  const gardenPlotGroupRef = useRef<THREE.Group | null>(null);
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -141,10 +149,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       getInitialPixelRatio(window.devicePixelRatio, deviceMemory),
     );
     renderer.setPixelRatio(renderBudget.pixelRatio);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.88;
+    renderer.toneMappingExposure = 0.94;
     container.appendChild(renderer.domElement);
 
     // 2. Post-Processing: EffectComposer & UnrealBloomPass
@@ -361,6 +370,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // High-detail authored landmarks: Tulba, Čačalica and cultivation micro-zones.
     buildPozarevacLandmarks(scene);
+    // Stadium, Korzo, hospital exterior and central local-reference micro-landmarks.
+    buildUrbanMicroLandmarks(scene);
 
     // 7. STREETLIGHTS ALONG TABAČKA ČARŠIJA
     const streetLightGroup = new THREE.Group();
@@ -415,7 +426,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     createBench(-4.2, 2, Math.PI / 2);
     createBench(4.2, -14, -Math.PI / 2);
     createBench(4.2, 2, -Math.PI / 2);
-    createBench(-9, 5, 0);
     createBench(-11, 9, 0.4);
 
     // Flower Planters / Žardinjere
@@ -528,6 +538,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const coresList: THREE.Mesh[] = [];
 
     POŽAREVAC_POIS.forEach((poi) => {
+      // Keep the square POI interactive, but do not place a giant marker in the open road.
+      if (poi.id === 'stari_centar') return;
       const beaconContainer = new THREE.Group();
       beaconContainer.position.set(poi.coords.x, 0, poi.coords.z);
 
@@ -576,6 +588,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
     scene.add(poiGroup);
 
+    const gardenPlotGroup = buildPlantPlotModels(plantPlotsRef.current);
+    gardenPlotGroupRef.current = gardenPlotGroup;
+    scene.add(gardenPlotGroup);
+
     // 13. DYNAMIC MISSION BEACONS (Flashing holographic beacons for dynamic missions)
     const missionBeaconsGroup = new THREE.Group();
     scene.add(missionBeaconsGroup);
@@ -602,13 +618,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       runSpeed: 8.8 * (characterStats.moveSpeed || 1),
       jumpPower: 7.8 * (characterStats.jumpPower || 1),
       getDynamicColliders: () => {
-        return traffic.vehicles.map((v) => ({
-          x: v.mesh.position.x,
-          z: v.mesh.position.z,
-          halfWidth: v.type === 'suv' ? 0.95 : 0.85,
-          halfDepth: v.type === 'suv' ? 1.9 : 1.75,
-          type: 'vehicle' as const,
-        }));
+        return [
+          ...traffic.vehicles.map((v) => ({
+            x: v.mesh.position.x,
+            z: v.mesh.position.z,
+            halfWidth: v.type === 'suv' ? 0.95 : 0.85,
+            halfDepth: v.type === 'suv' ? 1.9 : 1.75,
+            type: 'vehicle' as const,
+            velocityX: v.velocity.x,
+            velocityZ: v.velocity.z,
+          })),
+          ...policeAndDogs.policeCars.map((car) => ({ x: car.group.position.x, z: car.group.position.z, halfWidth: 0.92, halfDepth: 1.85, type: 'vehicle' as const })),
+          ...policeAndDogs.pursuitCruisers.map((car) => ({ x: car.group.position.x, z: car.group.position.z, halfWidth: 0.92, halfDepth: 1.85, type: 'vehicle' as const })),
+          ...policeAndDogs.pedestrians.map((ped) => ({ x: ped.group.position.x, z: ped.group.position.z, halfWidth: 0.28, halfDepth: 0.28, type: 'prop' as const })),
+          ...policeAndDogs.dogs.map((dog) => ({ x: dog.group.position.x, z: dog.group.position.z, halfWidth: 0.32, halfDepth: 0.48, type: 'prop' as const })),
+        ];
       },
     });
     controller.targetDistance = 4.2;
@@ -685,6 +709,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // Keyboard Shortcuts: E for POI or Garden Plot Interaction
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'e' || e.key === 'E') {
+        if (e.repeat || (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]'))) return;
+        const nearbyPlot = nearPlantPlotRef.current;
+        if (nearbyPlot && onInteractWithPlotRef.current) {
+          onInteractWithPlotRef.current(nearbyPlot);
+          audioDsp.playRotateTick();
+          return;
+        }
         if (nearPoiRef.current && onInteractWithPoi) {
           onInteractWithPoi(nearPoiRef.current);
           audioDsp.playRotateTick();
@@ -843,6 +874,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         if (onNearPoiChange) onNearPoiChange(foundNearPoi);
       }
 
+      let nearestPlot: PlantPlot | null = null;
+      let nearestPlotDistance = 4.2;
+      for (const plot of plantPlotsRef.current) {
+        if (!plot.isUnlocked) continue;
+        const distance = Math.hypot(controller.position.x - plot.coords.x, controller.position.z - plot.coords.z);
+        if (distance < nearestPlotDistance) {
+          nearestPlot = plot;
+          nearestPlotDistance = distance;
+        }
+      }
+      nearPlantPlotRef.current = nearestPlot;
+
       // Check initial quest beacons distance
       quests.forEach((q) => {
         if (!q.completed) {
@@ -901,6 +944,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       traffic.dispose();
       policeAndDogs.dispose();
       weatherMgr.dispose();
+      if (gardenPlotGroupRef.current) {
+        scene.remove(gardenPlotGroupRef.current);
+        disposePlantPlotModels(gardenPlotGroupRef.current);
+        gardenPlotGroupRef.current = null;
+      }
       spatialSoundManager.stopAll();
       composer.dispose();
       renderer.dispose();
@@ -909,6 +957,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const current = gardenPlotGroupRef.current;
+    const parent = current?.parent;
+    if (!current || !parent) return;
+    const next = buildPlantPlotModels(plantPlots);
+    parent.add(next);
+    parent.remove(current);
+    disposePlantPlotModels(current);
+    gardenPlotGroupRef.current = next;
+  }, [plantPlots]);
 
   // Update Weather dynamically
   useEffect(() => {

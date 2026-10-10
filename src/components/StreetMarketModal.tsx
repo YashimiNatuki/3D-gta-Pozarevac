@@ -20,6 +20,7 @@ import {
   StreetEconomyEngine,
 } from '../services/streetEconomy';
 import { audioDsp } from '../services/audioDsp';
+import { getPozarevacDistrict } from '../services/pozarevacDistricts';
 
 export interface StreetMarketModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export interface StreetMarketModalProps {
   timeOfDay: TimeOfDay;
   canBuyHere: boolean;
   canSellHere: boolean;
+  marketDistrictId?: string;
   marketFeedback?: string | null;
   onBuyItem: (item: MarketItem, quantity: number, price: number) => void;
   onSellItem: (invItem: InventoryItem, quantity: number, price: number) => void;
@@ -42,12 +44,14 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
   timeOfDay,
   canBuyHere,
   canSellHere,
+  marketDistrictId,
   marketFeedback,
   onBuyItem,
   onSellItem,
 }) => {
   const [activeTab, setActiveTab] = useState<'market' | 'inventory'>('market');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const marketDistrict = getPozarevacDistrict(marketDistrictId);
 
   if (!isOpen) return null;
 
@@ -131,8 +135,9 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
               ? 'LOKACIJA POTVRĐENA: Buvljak kod Pruge — kupovina je omogućena.'
               : 'KUPOVINA ZAKLJUČANA: priđi Buvljaku kod Pruge (oznaka na radaru) na najviše 7 m.'
             : canSellHere
-              ? 'LOKACIJA POTVRĐENA: Tabačka Čaršija — prodaja je omogućena.'
-              : 'PRODAJA ZAKLJUČANA: priđi Tabačkoj Čaršiji (oznaka na radaru) na najviše 7 m.')}
+              ? `LOKACIJA POTVRĐENA: ${marketDistrict?.name ?? 'reonska tezga'} — prodaja je omogućena.`
+              : 'PRODAJA ZAKLJUČANA: priđi najbližoj pijaci ili reonskoj tezgi na najviše 7 m.')}
+          {marketDistrict && <span className="ml-2 text-cyan-200">· otkup reona {marketDistrict.sellMultiplier >= 1 ? '+' : ''}{Math.round((marketDistrict.sellMultiplier - 1) * 100)}%</span>}
         </div>
 
         {/* Navigation Tabs (Kupi na Pijaci vs Tvoj Ranac) */}
@@ -193,7 +198,7 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {activeTab === 'market' ? (
             filteredMarketItems.map((item) => {
-              const { buy, sell } = StreetEconomyEngine.calculateItemPrices(item, timeOfDay);
+              const { buy, sell } = StreetEconomyEngine.calculateItemPrices(item, timeOfDay, marketDistrictId);
               const canAfford = playerCash >= buy;
 
               return (
@@ -250,7 +255,7 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
             inventory.map((inv) => {
               const baseMarketItem = POŽAREVAC_MARKET_ITEMS.find((m) => m.id === inv.itemId);
               const sellPrice = baseMarketItem
-                ? StreetEconomyEngine.calculateItemPrices(baseMarketItem, timeOfDay).sell
+                ? StreetEconomyEngine.calculateItemPrices(baseMarketItem, timeOfDay, marketDistrictId).sell
                 : inv.sellPrice;
 
               return (

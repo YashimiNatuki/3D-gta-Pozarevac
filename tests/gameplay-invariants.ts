@@ -3,6 +3,7 @@ import {
   DynamicMissionEngine,
   INITIAL_DYNAMIC_MISSIONS,
   INITIAL_TURF_ZONES,
+  POZAREVAC_STORY_CAMPAIGN,
   reconcileMissionCatalog,
   reconcileTurfZones,
   type DynamicMission,
@@ -34,11 +35,16 @@ import {
 } from '../src/services/gameProgress';
 import {
   isWithinMarketZone,
+  INITIAL_PLANT_PLOTS,
+  isSeedCompatibleWithDistrict,
   POŽAREVAC_MARKET_ITEMS,
+  reconcilePlantPlots,
   StreetEconomyEngine,
 } from '../src/services/streetEconomy';
+import { findMarketDistrict, findPozarevacDistrict } from '../src/services/pozarevacDistricts';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../src/services/rendererPerformance';
 import { SpatialHash2D } from '../src/services/spatialHash';
+import { getCameraSafeDistance, getVehicleImpactContact } from '../src/services/collisionGeometry';
 import { GameDirector } from '../src/services/gameDirector';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -58,6 +64,21 @@ const stableFrame = director.tick({
   activeMissionType: 'escape_police', weather: 'Rain',
 });
 assert.equal(stableFrame.signal, null);
+
+const cameraStart = { x: 0, y: 1.5, z: 0 };
+const cameraEnd = { x: 0, y: 1.5, z: 10 };
+const cameraWall = [{ minX: -2, maxX: 2, minZ: 4, maxZ: 5 }];
+assert.equal(getCameraSafeDistance(cameraStart, cameraEnd, []), 10);
+assert.ok(getCameraSafeDistance(cameraStart, cameraEnd, cameraWall) < 4, 'camera should stop before a wall with clearance');
+assert.ok(getCameraSafeDistance(cameraStart, cameraEnd, cameraWall) > 3, 'camera should retain a usable close follow distance');
+assert.equal(getVehicleImpactContact({ x: 0, z: 2.5 }, {
+  x: 0, z: 0, halfWidth: 1, halfDepth: 2, velocityX: 0, velocityZ: 1.7,
+}), null, 'parked/slow cars should not knock back the player');
+const fastCarImpact = getVehicleImpactContact({ x: 0, z: 2.5 }, {
+  x: 0, z: 0, halfWidth: 1, halfDepth: 2, velocityX: 0, velocityZ: 2.5,
+});
+assert.ok(fastCarImpact);
+assert.ok(fastCarImpact.directionZ > 0.9, 'knockback should point away from the car');
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',
@@ -143,6 +164,54 @@ assert.equal(isWithinMarketZone({ x: -18, z: -6 }, 'buy'), false);
 assert.equal(isWithinMarketZone({ x: 0, z: -10 }, 'sell'), true);
 assert.equal(isWithinMarketZone({ x: 0, z: -18 }, 'sell'), false);
 assert.equal(isWithinMarketZone({ x: Number.NaN, z: 0 }, 'buy'), false);
+
+assert.equal(findPozarevacDistrict({ x: 0, z: 0 })?.id, 'djura');
+assert.equal(findMarketDistrict({ x: -18, z: -14 }, 'buy')?.id, 'buvljak');
+assert.equal(findMarketDistrict({ x: 0, z: -10 }, 'sell')?.id, 'blok-c');
+assert.equal(findMarketDistrict({ x: -25, z: -4 }, 'sell')?.id, 'busije');
+assert.equal(findMarketDistrict({ x: 0, z: 0 }, 'buy'), null, 'buying should stay at the Buvljak only');
+assert.equal(isSeedCompatibleWithDistrict('seed_tabacka_basil', 'blok-c'), true);
+assert.equal(isSeedCompatibleWithDistrict('seed_tabacka_basil', 'busije'), false);
+assert.equal(isSeedCompatibleWithDistrict('seed_cyber_pelcer', 'busije'), true, 'legacy/general seed remains usable across districts');
+assert.deepEqual(StreetEconomyEngine.calculateItemPrices(retroRadio, 'day', 'djura'), { buy: 700, sell: 1334 });
+assert.deepEqual(StreetEconomyEngine.calculateItemPrices(retroRadio, 'day', 'buvljak'), { buy: 700, sell: 1058 });
+
+const oldDjuraPlot = INITIAL_PLANT_PLOTS.find((plot) => plot.id === 'plot_djura');
+const oldCacalicaPlot = INITIAL_PLANT_PLOTS.find((plot) => plot.id === 'plot_3');
+assert.ok(oldDjuraPlot && oldCacalicaPlot);
+const migratedPlots = reconcilePlantPlots([{
+  ...oldDjuraPlot,
+  coords: { x: -1, z: 0 },
+  isUnlocked: true,
+  plantedSeedId: 'seed_djura_neon_mint',
+  seedName: 'Đura Neon Nana',
+  stage: 'growing',
+  growthProgress: 40,
+}]);
+const migratedDjuraPlot = migratedPlots.find((plot) => plot.id === 'plot_djura');
+assert.ok(migratedDjuraPlot);
+assert.deepEqual(migratedDjuraPlot.coords, { x: 5, z: 0 }, 'legacy plot coordinate must not spawn back in the road');
+assert.equal(migratedDjuraPlot.isUnlocked, true);
+assert.equal(migratedDjuraPlot.growthProgress, 40);
+assert.equal(migratedPlots.length, INITIAL_PLANT_PLOTS.length);
+
+const cropInProgress = {
+  ...oldCacalicaPlot,
+  isUnlocked: true,
+  plantedSeedId: 'seed_cacalica',
+  seedName: 'Čačalica Bio-Seme',
+  stage: 'growing' as const,
+  growthProgress: 99,
+  watered: true,
+  readyHarvestYield: null,
+};
+const harvestA = StreetEconomyEngine.advancePlantGrowth([cropInProgress], 2).updatedPlots[0].readyHarvestYield;
+const harvestB = StreetEconomyEngine.advancePlantGrowth([cropInProgress], 2).updatedPlots[0].readyHarvestYield;
+assert.ok(harvestA);
+assert.deepEqual(harvestA, harvestB, 'harvest yield should stay deterministic after save/reload');
+assert.equal(harvestA.itemId, 'produce_cacalica_tea');
+assert.ok(harvestA.quantity >= 2 && harvestA.quantity <= 3);
+assert.deepEqual(POZAREVAC_STORY_CAMPAIGN.map((mission) => mission.campaignChapter), [1, 2, 3, 4]);
 
 const canonicalTrade = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_9');
 assert.ok(canonicalTrade);

@@ -11,7 +11,7 @@ export interface PožarevacPoi {
   serbianName: string;
   gps: GpsCoordinate;
   coords: { x: number; z: number };
-  category: 'historic' | 'park' | 'commercial' | 'hq' | 'street' | 'suburb';
+  category: 'historic' | 'park' | 'commercial' | 'hq' | 'street' | 'suburb' | 'sports';
   streetName: string;
   description: string;
   dialoguePrompt: string;
@@ -19,6 +19,8 @@ export interface PožarevacPoi {
   rewardXp: number;
   rewardCash: number;
   icon: string;
+  coordinateConfidence?: 'authoritative' | 'map-provider' | 'local-approximate';
+  sourceUrls?: string[];
 }
 
 export interface PožarevacStreet {
@@ -265,5 +267,25 @@ export const POŽAREVAC_POIS: PožarevacPoi[] = [
     rewardXp: 650,
     rewardCash: 5000,
     icon: '🐎',
+  },
+  {
+    id: 'vasariste_stadium',
+    name: 'Vašarište Stadium',
+    serbianName: 'Gradski stadion Vašarište (stadion dr Mihailo Andejević Andrejka)',
+    gps: localCoordsToGps(-24, 12),
+    coords: { x: -24, z: 12 },
+    category: 'sports',
+    streetName: 'Vašarište — lokalni orijentir',
+    description: 'Gradski stadion povezan sa lokalnim nazivom Vašarište. Položaj markera je autorska gameplay aproksimacija; dostupan TomTom rezultat je samo obližnja ulica, ne potvrđen centar stadiona.',
+    dialoguePrompt: 'Stigao sam do gradskog stadiona Vašarište u Požarevcu. Šta je lokalna priča i kako se stadion zove danas?',
+    initialDialogue: 'Vašarište, legendo — ovo je gradski stadion, danas vezan za ime dr Mihaila Andejevića Andrejke. U igri je prikazan kao javni sportski landmark, bez tvrdnje da su prilazne koordinate geodetski potvrđene.',
+    rewardXp: 420,
+    rewardCash: 2800,
+    icon: '⚽',
+    coordinateConfidence: 'local-approximate',
+    sourceUrls: [
+      'https://www.novosti.rs/c/srbija/vesti/1143962/pored-andrejke-slave-ostale-svoje-velikane-gradskom-fudbalskom-stadionu-pozarevcu-ime-cuvenog-sugradjanina-mihajla-andrejevica',
+      'https://stadiumdb.com/stadiums/ser/stadion_vasariste',
+    ],
   },
 ];

@@ -140,17 +140,6 @@ export class PhysicsEngine {
   }
 
   private setupStreetPropBoundaries() {
-    // Central Monolith
-    const monolithShape = new CANNON.Box(new CANNON.Vec3(1.3, 2.5, 1.3));
-    const monolithBody = new CANNON.Body({
-      mass: 0,
-      material: this.buildingMaterial,
-      shape: monolithShape,
-    });
-    monolithBody.position.set(0, 2.0, 0);
-    this.world.addBody(monolithBody);
-    this.buildingBodies.push(monolithBody);
-
     // Flower Planters along Tabačka Čaršija
     [-18, -6, 6, 18].forEach((pz) => {
       [-3.8, 3.8].forEach((px) => {
@@ -172,7 +161,6 @@ export class PhysicsEngine {
       { x: -4.2, z: 2, hw: 0.35, hd: 0.9 },
       { x: 4.2, z: -14, hw: 0.35, hd: 0.9 },
       { x: 4.2, z: 2, hw: 0.35, hd: 0.9 },
-      { x: -9, z: 5, hw: 0.9, hd: 0.35 },
     ].forEach((bench) => {
       const benchShape = new CANNON.Box(new CANNON.Vec3(bench.hw, 0.45, bench.hd));
       const benchBody = new CANNON.Body({

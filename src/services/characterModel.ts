@@ -220,6 +220,13 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
     roughness: 0.1,
     metalness: 0.85,
   });
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x241d1b, roughness: 0.92 });
+  const browMat = new THREE.MeshStandardMaterial({ color: 0x392722, roughness: 0.9 });
+  const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf4eee5, roughness: 0.42 });
+  const irisMat = new THREE.MeshStandardMaterial({ color: 0x3b261a, roughness: 0.38 });
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0b0a09 });
+  const lensMat = new THREE.MeshPhysicalMaterial({ color: 0x203044, roughness: 0.16, metalness: 0.3, transparent: true, opacity: 0.28 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: 0x874a41, roughness: 0.7 });
 
   // Soft character point illumination (no blinding glare)
   const heroLight = new THREE.PointLight(0xfff7ed, 0.45, 6, 1.0);
@@ -326,10 +333,65 @@ export function buildThugCharacter(initialOutfit: ThugOutfitId = 'classic'): Cha
   jawMesh.position.set(0, 0.08, 0.06);
   headGroup.add(jawMesh);
 
-  // Designer sunglasses with curved temple arms
-  const shadesMesh = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.09, 0.08), shadesMat);
-  shadesMesh.position.set(0, 0.22, 0.23);
-  headGroup.add(shadesMesh);
+  // Hair cap, ears, eyes and small facial planes make the silhouette readable in close camera shots.
+  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2), hairMat);
+  hairCap.position.set(0, 0.2, -0.005);
+  hairCap.castShadow = true;
+  headGroup.add(hairCap);
+
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), skinMat);
+    ear.scale.set(0.65, 1.08, 0.62);
+    ear.position.set(side * 0.225, 0.18, 0.005);
+    headGroup.add(ear);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.052, 14, 12), eyeWhiteMat);
+    eye.scale.set(1.22, 0.68, 0.48);
+    eye.position.set(side * 0.083, 0.235, 0.216);
+    headGroup.add(eye);
+
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 10), irisMat);
+    iris.scale.set(0.86, 1.0, 0.55);
+    iris.position.set(side * 0.083, 0.234, 0.245);
+    headGroup.add(iris);
+
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.011, 10, 8), pupilMat);
+    pupil.position.set(side * 0.083, 0.234, 0.258);
+    headGroup.add(pupil);
+
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.075, 3, 8), browMat);
+    brow.rotation.z = side * -0.12;
+    brow.position.set(side * 0.084, 0.302, 0.215);
+    headGroup.add(brow);
+  }
+
+  const noseBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.042, 0.13, 12), skinMat);
+  noseBridge.position.set(0, 0.158, 0.24);
+  noseBridge.rotation.x = -0.12;
+  headGroup.add(noseBridge);
+  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.034, 12, 10), skinMat);
+  noseTip.scale.set(1.05, 0.72, 0.92);
+  noseTip.position.set(0, 0.105, 0.272);
+  headGroup.add(noseTip);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.018, 0.018), lipMat);
+  mouth.position.set(0, 0.036, 0.246);
+  headGroup.add(mouth);
+
+  // Tinted two-lens shades, not a single opaque bar; eyes remain faintly visible underneath.
+  for (const side of [-1, 1]) {
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.135, 0.07, 0.018), lensMat);
+    lens.position.set(side * 0.083, 0.235, 0.255);
+    headGroup.add(lens);
+    const topFrame = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.014, 0.024), shadesMat);
+    topFrame.position.set(side * 0.083, 0.278, 0.253);
+    headGroup.add(topFrame);
+    const temple = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.025, 0.16), shadesMat);
+    temple.position.set(side * 0.157, 0.237, 0.17);
+    headGroup.add(temple);
+  }
+  const glassesBridge = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.014, 0.02), shadesMat);
+  glassesBridge.position.set(0, 0.256, 0.254);
+  headGroup.add(glassesBridge);
 
   // Bandana with realistic headband contour
   const bandanaGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.1, 24);

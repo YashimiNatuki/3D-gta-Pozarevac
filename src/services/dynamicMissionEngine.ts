@@ -69,6 +69,9 @@ export interface DynamicMission {
     tradeSoldQuantity?: number;
     harvested?: boolean;
   };
+  campaignChapter?: number;
+  requiredPlantPlotId?: string;
+  unlockPlantPlotIds?: string[];
   failureReason?: string;
   status: 'available' | 'active' | 'completed' | 'failed';
   isDaily: boolean;
@@ -112,6 +115,66 @@ export const GANG_CHARACTERS: Record<string, MissionCharacter> = {
     phoneTag: 'Konglomerat Preduzeće™',
   },
 };
+
+/** A short, linear tutorial arc; later chapters are added only after the prior chapter is completed. */
+export const POZAREVAC_STORY_CAMPAIGN: readonly DynamicMission[] = [
+  {
+    id: 'story_pozarevac_01', campaignChapter: 1,
+    title: 'Prolog: Prvi krug po Đuri', type: 'landmark_scout', giver: GANG_CHARACTERS.sale,
+    locationName: 'Djuranske Favele — Đura', targetCoords: { x: -1, z: 0 },
+    description: 'Upoznaj Saleta u centralnom reonu Đure. Nauči kretanje, kameru i E-interakciju; lokalni naziv i pozicija su gameplay oznake dogovorene sa igračem.',
+    dialogueText: 'Sale: Dobro došao u grad, brate. Ne juri odmah na misije — obiđi reon, priđi markeru i pritisni E. Posle toga pravimo rutu kroz blokove.',
+    completionText: 'Prvi reon je upoznat. Otvorena je priča: Buvljak → Tabačka → kvartovske leje.',
+    requiredTimeOfDay: 'any', rewardCash: 350, rewardXp: 120, rewardRespect: 5,
+    status: 'available', isDaily: false,
+  },
+  {
+    id: 'story_pozarevac_02', campaignChapter: 2,
+    title: 'Prvi obrt: Buvljak do Tabačke', type: 'trade_flip', giver: GANG_CHARACTERS.sale,
+    locationName: 'Buvljak kod Pruge → Blok C / Tabačka centar', targetCoords: { x: -18, z: -14 },
+    description: 'Kupi jedan Retro Radio-Kasetofon 90-ih na Buvljaku, zatim ga prodaj u Bloku C — Tabačka centar. Ovo je uvod u inventory, market geofence i reonsku potražnju.',
+    dialogueText: 'Sale: Prvi posao je čist i jednostavan — ista roba, dva mesta. Kupi radio kod pruge, prošetaj do Tabačke i prodaj ga. Prati checkpoint-e; cena zavisi od doba dana i reona.',
+    completionText: 'Prvi obrt je uspeo. Otključana je leja Bloka C; svaka prodaja sada pripada konkretnom kvartu.',
+    requiredTimeOfDay: 'any', checkpoints: [
+      { label: 'Kupi radio na Buvljaku', x: -18, z: -14 },
+      { label: 'Prodaj radio u Bloku C — Tabačka centar', x: 0, z: -10 },
+    ],
+    requiredTradeItemId: 'retro_radio_cassette', requiredTradeItemName: 'Retro Radio-Kasetofon 90-ih', requiredTradeQuantity: 1,
+    rewardCash: 1800, rewardXp: 260, rewardRespect: 10, unlockPlantPlotIds: ['plot_blok_c'],
+    status: 'available', isDaily: false,
+  },
+  {
+    id: 'story_pozarevac_03', campaignChapter: 3,
+    title: 'Prva leja: posađeno, zaliveno, ubrano', type: 'plant_harvest', giver: GANG_CHARACTERS.yashime,
+    locationName: 'Čačalica — ogledna parcela', targetCoords: { x: 15, z: 12 },
+    description: 'Kupi fiktivno seme na Buvljaku, idi peške do parcele na Čačalici, posadi, zalij i uberi. Žetva se čuva u ruksaku; zatim je prodaj u željenom reonu za lokalni bonus.',
+    dialogueText: 'Yashime: Nema više klikova sa druge strane grada. Moraš stići do leje, posaditi seme, zaliti ga i vratiti se po zreo plod. Voda ubrzava rast, a tržište biraš ti.',
+    completionText: 'Prva žetva je evidentirana. Otključani su vrtovi Busija i Đurđevih rupa.',
+    requiredTimeOfDay: 'any', requiredPlantPlotId: 'plot_3', rewardCash: 2200, rewardXp: 360, rewardRespect: 14,
+    unlockPlantPlotIds: ['plot_busije', 'plot_djurdjeve_rupe'], status: 'available', isDaily: false,
+  },
+  {
+    id: 'story_pozarevac_04', campaignChapter: 4,
+    title: 'Mreža kvartova: Busije, Đurđeve rupe, Hipodrom', type: 'landmark_scout', giver: GANG_CHARACTERS.sale,
+    locationName: 'Busije → Đurđeve rupe → Hipodrom → Vašarište', targetCoords: { x: -25, z: -4 },
+    description: 'Poveži lokalne gameplay zone kroz četiri checkpoint-a. Busije i Đurđeve rupe su lokalni nazivi/igre, ne tvrdnja o zvaničnim administrativnim granicama. Vašarište je vezano za gradski stadion.',
+    dialogueText: 'Sale: Sad znaš trgovinu i baštu. Obiđi Busije, Đurđeve rupe, Hipodrom i Vašarište — tek onda možeš da vodiš ekipu kroz ceo grad.',
+    completionText: 'Ruta je potvrđena. Otključana je ogledna leja Hipodroma i otvoreni su svi standardni reonski poslovi.',
+    requiredTimeOfDay: 'any', checkpoints: [
+      { label: 'Upoznaj reon Busije', x: -25, z: -4 },
+      { label: 'Prođi kroz Đurđeve rupe', x: -8, z: -18 },
+      { label: 'Upoznaj Hipodrom', x: -28, z: 26 },
+      { label: 'Završi rutu na stadionu Vašarište', x: -24, z: 12 },
+    ],
+    rewardCash: 3600, rewardXp: 650, rewardRespect: 26, unlockPlantPlotIds: ['plot_hipodrom'],
+    status: 'available', isDaily: false,
+  },
+];
+
+export function getStoryCampaignMission(chapter: number): DynamicMission | null {
+  const mission = POZAREVAC_STORY_CAMPAIGN.find((candidate) => candidate.campaignChapter === chapter);
+  return mission ? { ...mission, checkpoints: mission.checkpoints?.map((checkpoint) => ({ ...checkpoint })) } : null;
+}
 
 export const INITIAL_TURF_ZONES: TurfZone[] = [
   {
@@ -185,6 +248,31 @@ export const INITIAL_TURF_ZONES: TurfZone[] = [
     centerCoords: { x: -11, z: 7 },
     color: '#10b981',
     isContested: false,
+  },
+  {
+    id: 'tz_djura', name: 'Djuranske Favele — Đura (lokalni reon)', landmarkKey: 'djura',
+    controllingGang: 'Kostolac Syndicate', controlPercentage: 32, dailyIncome: 900, respectBonus: 30,
+    centerCoords: { x: -1, z: 0 }, color: '#ef4444', isContested: true,
+  },
+  {
+    id: 'tz_blok_c', name: 'Blok C — Tabačka centar', landmarkKey: 'tabacka_carsija',
+    controllingGang: 'Y!App Konglomerat', controlPercentage: 74, dailyIncome: 1700, respectBonus: 50,
+    centerCoords: { x: 0, z: -10 }, color: '#10b981', isContested: false,
+  },
+  {
+    id: 'tz_busije', name: 'Busije (lokalni reon)', landmarkKey: 'busije',
+    controllingGang: 'Zabela Mob', controlPercentage: 28, dailyIncome: 1300, respectBonus: 38,
+    centerCoords: { x: -25, z: -4 }, color: '#8b5cf6', isContested: true,
+  },
+  {
+    id: 'tz_djurdjeve_rupe', name: 'Đurđeve rupe (lokalni reon)', landmarkKey: 'djurdjeve_rupe',
+    controllingGang: 'Kostolac Syndicate', controlPercentage: 24, dailyIncome: 1450, respectBonus: 40,
+    centerCoords: { x: -8, z: -18 }, color: '#ef4444', isContested: true,
+  },
+  {
+    id: 'tz_vasariste', name: 'Vašarište — stadion', landmarkKey: 'vasariste',
+    controllingGang: 'Zabela Mob', controlPercentage: 40, dailyIncome: 1600, respectBonus: 44,
+    centerCoords: { x: -24, z: 12 }, color: '#8b5cf6', isContested: true,
   },
 ];
 
@@ -495,6 +583,30 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     status: 'available',
     isDaily: false,
   },
+  {
+    id: 'dm_14',
+    title: 'Vašarište: izviđanje gradskog stadiona 🏟️',
+    type: 'landmark_scout',
+    giver: GANG_CHARACTERS.yashime,
+    locationName: 'Vašarište → Stari Korzo',
+    targetCoords: { x: -24, z: 12 },
+    description: 'Poseti novi javni 3D landmark Vašarišta i potvrdi nastavak rute na Starom Korzou. Koordinate Vašarišta su lokalna gameplay aproksimacija, ne zvanično geodetsko snimanje.',
+    dialogueText: 'Idi do stadiona Vašarište, snimi kadar sa tribine kao fikcionalni cilj misije, pa nastavi do Starog Korzoa. U igri koristimo lokalni orijentir dok ne dobijemo tačnu potvrdu centra stadiona.',
+    completionText: 'Stadion Vašarište i nastavak rute ka Starom Korzou su evidentirani.',
+    requiredTimeOfDay: 'any',
+    timeLimitSeconds: 720,
+    checkpoints: [
+      { label: 'Izviđaj stadion Vašarište', x: -24, z: 12 },
+      { label: 'Potvrdi nastavak na Starom Korzou', x: 9, z: -4 },
+    ],
+    rewardCash: 3200,
+    rewardXp: 520,
+    rewardRespect: 24,
+    rewardGearName: 'Vašarište Scout Patch',
+    status: 'available',
+    isDaily: false,
+  },
+  ...POZAREVAC_STORY_CAMPAIGN.slice(0, 1),
 ];
 
 /** Reconcile saved progress with the current mission catalog after game updates. */
@@ -593,6 +705,7 @@ export class DynamicMissionEngine {
       { name: 'Etno Park Tulba', x: 12, z: 29 },
       { name: 'Hipodrom Požarevac', x: -28, z: 26 },
       { name: 'Buvljak kod Pruge', x: -18, z: -14 },
+      { name: 'Vašarište', x: -24, z: 12 },
     ];
     const tradeStops = locations.filter((location) => location.name !== 'Tabačka Čaršija' && location.name !== 'Buvljak kod Pruge');
     const safehouses = [
@@ -680,8 +793,10 @@ export class DynamicMissionEngine {
         requiredTimeOfDay = 'night';
       } else if (type === 'landmark_scout') {
         const landmark = loc.name === 'Etno Park Tulba'
-          ? { name: 'Etno Park Tulba', x: 12, z: 29, next: { name: 'Čačalica', x: 17, z: 13 } }
-          : { name: 'Čačalica', x: 17, z: 13, next: { name: 'Gradski Park', x: -11, z: 7 } };
+          ? { name: 'Etno Park Tulba', x: 12, z: 29, next: { name: 'Čačalica', x: 26, z: 28 } }
+          : loc.name === 'Vašarište'
+          ? { name: 'Vašarište', x: -24, z: 12, next: { name: 'Stari Korzo', x: 9, z: -4 } }
+          : { name: 'Čačalica', x: 26, z: 28, next: { name: 'Gradski Park', x: -11, z: 7 } };
         title = `Izviđanje landmarka: ${landmark.name} 🗺️`;
         description = `Obiđi novi 3D landmark ${landmark.name}, aktiviraj putokaz, zatim proveri sledeću tačku u ${landmark.next.name}.`;
         locationName = `${landmark.name} → ${landmark.next.name}`;

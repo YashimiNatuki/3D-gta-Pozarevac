@@ -1,6 +1,4 @@
-// [AiChatBratina v10.0] - AudioLocalizationManager (XP Full Power Edition)
-// Localized Serbian Voice Engine & 3D Spatial PannerNode Integration
-// Purges robotic legacy voices with procedural Balkan formant acoustics and Serbian speech synthesis
+// Serbian NPC dialogue routing: gender-aware browser voices, per-event cooldowns and a single DSP queue.
 
 import { audioDsp } from './audioDsp';
 
@@ -12,25 +10,37 @@ export interface SpatialPosition {
 
 export interface SerbianVoiceOption {
   speaker?: string;
+  gender?: 'male' | 'female' | 'neutral';
   emotion?: 'shout' | 'calm' | 'angry' | 'street';
   pitch?: number;
   rate?: number;
   gain?: number;
 }
 
-// Authentic Požarevac & Serbian street voice lines
-export const SERBIAN_NPC_BANTER: string[] = [
-  'Gde si rođo brate!',
-  'Alo bre, pazi kuda hodaš!',
-  'Šta ima u Požarevcu brate?',
-  'Yashime drži centralni sektor, Full Power!',
-  'Vidi ovog šmekera sa Tabačke!',
-  'Brate moj, miriše pečenje iz centra!',
-  'Čuvaj se murije kod Gradskog Parka ro bro!',
-  'Konglomerat Preduzeće™ nikad ne spava!',
-  'Alo komšija, jesi video ove mašine?',
-  'Ide gas rođo, samo pun gas!',
+// Gendered, varied, local street lines; keep the combined legacy export for existing consumers.
+export const SERBIAN_MALE_NPC_BANTER: string[] = [
+  'Šta ima, komšija? Baš je mirno danas.', 'Kuda si poš’o, majstore? Polako malo.',
+  'Je l’ otvoren buvljak kod pruge?', 'Vidimo se na Tabačkoj, imam jednu turu.',
+  'Brate, ostavi prolaz pešacima.', 'Ko je pustio ovaj dobar bit iz lokala?',
+  'Ima li šta novo oko Hipodroma?', 'Pazi, auto ti prilazi s desne strane.',
+  'Ne staj baš na sred raskrsnice, molim te.', 'Uzmi sveže seme kod tezge, dobra je cena.',
+  'Ja odo’ do Korzoa, treba li nešto?', 'Igra se posle u parku, dođi ako si slobodan.',
+  'Ne diraj tu leju, komšija — tek je posađeno.', 'Vid’o sam patrolu kod centra, za svaki slučaj.',
+  'Ajde, rođače, svako svojim putem.', 'Lepo vreme za šetnju do Čačalice.',
+  'Ova ulica je tesna, pusti čoveka da prođe.', 'Sve je okej, samo bez naglih pokreta.',
 ];
+export const SERBIAN_FEMALE_NPC_BANTER: string[] = [
+  'Ćao, komšija. Znaš li kuda vodi ova ulica?', 'Molim te, ne trči preko trotoara.',
+  'Jesi videla gužvu kod Tabačke? Danas je baš prometno.', 'Baš je lepa muzika iz onog lokala.',
+  'Pazi kuda ideš, imam kese u rukama.', 'Vidimo se kod parka, idem samo do pijace.',
+  'Nemoj da blokiraš prolaz, ima nas još na ulici.', 'Izvini, je l’ ovo put ka Starom Korzou?',
+  'Uf, kakav dan… samo da stignem kući.', 'Nisam ti ja turistički vodič, pitaj na tezgi.',
+  'Super ti je jakna, baš ti dobro stoji.', 'Je l’ bezbedno da prođem ovuda? Stiže auto.',
+  'Rano je još, pustite ljude da se razbude.', 'Sveže bilje miriše iz bašte, ko je sadio?',
+  'Neću da se mešam, ali ovo mi deluje sumnjivo.', 'Komšinice, čekam te kod Korzoa.',
+  'Molim lepo, malo sporije — ima i dece u parku.', 'E baš mi je trebao miran krug po gradu.',
+];
+export const SERBIAN_NPC_BANTER: string[] = [...SERBIAN_MALE_NPC_BANTER, ...SERBIAN_FEMALE_NPC_BANTER];
 
 export const SERBIAN_DRIVER_CALLOUTS: string[] = [
   'Alo majstore, skloni se s puta!',
@@ -50,12 +60,22 @@ export const SERBIAN_COLLISION_CALLOUTS: string[] = [
   'Pazi gde gaziš, bre!',
 ];
 
+export const SERBIAN_FEMALE_COLLISION_CALLOUTS: string[] = [
+  'Alo, gledaj kuda ideš!', 'Molim te, pazi malo!', 'Ej, skoro si mi stao na nogu!',
+  'Skloni se s puta, dolaze kola!', 'Čoveče, ima mesta i na drugoj strani!',
+];
+
 export const SERBIAN_CAR_CRASH_CALLOUTS: string[] = [
   'Oćeš da pogineš bre?! Skloni se s puta!',
   'Pazi auto bre, ne leti na haubu!',
   'Gde srljaš bre rođo, jesi normalan?!',
   'Sviram ti pet minuta, jesi gluv bre?!',
   'Alo šmekeru, izlomi mi branik!',
+];
+
+export const SERBIAN_FEMALE_DRIVER_CALLOUTS: string[] = [
+  'Pazi, auto! Skloni se sa puta!', 'Molim te, nemoj pod točkove!',
+  'Ej, polako, nisam te videla!', 'Oprez! Ne staj nasred ulice!', 'Halo, pazi na pešake!',
 ];
 
 export const SERBIAN_POLICE_CALLOUTS: string[] = [
@@ -75,14 +95,10 @@ export const SERBIAN_GANG_CALLOUTS: string[] = [
 
 class AudioLocalizationManager {
   private static instance: AudioLocalizationManager;
-  private hasInitialized = false;
-  private serbianVoices: SpeechSynthesisVoice[] = [];
   private lastSpokenTime = 0;
-  private minIntervalMs = 2800; // prevent overlapping spam
+  private minIntervalMs = 3900; // one intelligible ambient line at a time
 
-  private constructor() {
-    this.initVoices();
-  }
+  private constructor() {}
 
   public static getInstance(): AudioLocalizationManager {
     if (!AudioLocalizationManager.instance) {
@@ -94,50 +110,7 @@ class AudioLocalizationManager {
   private lastCollisionVoiceTime = 0;
   private lastCarCrashVoiceTime = 0;
 
-  private initVoices() {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const loadVoices = () => {
-      try {
-        const voices = window.speechSynthesis.getVoices();
-        // Look for Serbian, South Slavic, or compatible European voices
-        this.serbianVoices = voices.filter(
-          (v) =>
-            v.lang.toLowerCase().startsWith('sr') ||
-            v.lang.toLowerCase().startsWith('hbs') ||
-            v.lang.toLowerCase().startsWith('hr') ||
-            v.lang.toLowerCase().startsWith('bs') ||
-            v.name.toLowerCase().includes('serbian') ||
-            v.name.toLowerCase().includes('croatian')
-        );
-        if (this.serbianVoices.length === 0) {
-          this.serbianVoices = voices.filter(
-            (v) =>
-              v.lang.toLowerCase().startsWith('sl') ||
-              v.lang.toLowerCase().startsWith('mk') ||
-              v.lang.toLowerCase().startsWith('bg') ||
-              v.lang.toLowerCase().startsWith('ru') ||
-              v.lang.toLowerCase().startsWith('pl') ||
-              v.lang.toLowerCase().startsWith('it')
-          );
-        }
-        this.hasInitialized = true;
-      } catch (err) {
-        console.warn('[AudioLocalizationManager] Error querying voices:', err);
-      }
-    };
-
-    loadVoices();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-  }
-
-  /**
-   * Main localization voice function:
-   * 1. Uses genuine SpeechSynthesis voice if available
-   * 2. Integrates procedural Balkan Formant Vocal Synthesizer with spatial 3D Panner
-   */
+  /** Route one intelligible native speech line with a voice profile and distance attenuation. */
   public playLocalizedSerbian(
     text: string,
     position?: SpatialPosition,
@@ -149,94 +122,64 @@ class AudioLocalizationManager {
     }
     this.lastSpokenTime = now;
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      this.speakWithNativeVoice(text, options);
-    }
-    // High-octane procedural Balkan formant synthesis & spatial panner backing
-    this.synthesizeBalkanFormants(text, position, options);
-  }
-
-  private speakWithNativeVoice(text: string, options?: SerbianVoiceOption) {
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const allVoices = window.speechSynthesis.getVoices();
-      const chosenVoice =
-        this.serbianVoices[0] ||
-        allVoices.find((v) => v.default) ||
-        allVoices[0];
-      if (chosenVoice) {
-        utterance.voice = chosenVoice;
-      }
-      utterance.rate = options?.rate || 1.08;
-      utterance.pitch = options?.pitch || (options?.emotion === 'shout' ? 1.2 : 1.0);
-      utterance.volume = options?.gain || 1.0;
-      utterance.lang = 'sr-RS';
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      this.synthesizeBalkanFormants(text, undefined, options);
-    }
-  }
-
-  /**
-   * Procedural Balkan Vocal Tract Formant Synthesizer:
-   * Produces realistic human speech cadence, syllabic formant peaks (F1, F2),
-   * pitch inflection (rising/falling Serbian intonation), and spatial 3D Panner positioning.
-   */
-  private synthesizeBalkanFormants(
-    text: string,
-    position?: SpatialPosition,
-    options?: SerbianVoiceOption
-  ) {
-    try {
-      audioDsp.initAudio();
-      // Delegate to audioDsp's enhanced Balkan vocal formant shouter with spatial panning
-      audioDsp.playSerbianStreetShout(text, position);
-    } catch (e) {
-      console.warn('[AudioLocalizationManager] Procedural vocalization failed:', e);
-    }
+    const gender = options?.gender ?? 'neutral';
+    const defaultPitch = gender === 'female' ? 1.13 : gender === 'male' ? 0.94 : 1.02;
+    const defaultRate = options?.emotion === 'shout' || options?.emotion === 'angry' ? 1.08 : 1.01;
+    audioDsp.playSerbianStreetShout(text, position, undefined, {
+      gender,
+      pitch: options?.pitch ?? defaultPitch,
+      rate: options?.rate ?? defaultRate,
+      gain: options?.gain ?? 0.62,
+    });
   }
 
   /**
    * Trigger collision voice when bumping into a pedestrian (realistic cooldown, no popups!)
    */
-  public triggerPedestrianCollision(position?: SpatialPosition): string {
+  public triggerPedestrianCollision(position?: SpatialPosition, gender: 'male' | 'female' = 'male'): string {
     const now = Date.now();
     if (now - this.lastCollisionVoiceTime < 8000) return '';
     this.lastCollisionVoiceTime = now;
-    const line = SERBIAN_COLLISION_CALLOUTS[Math.floor(Math.random() * SERBIAN_COLLISION_CALLOUTS.length)];
-    this.playLocalizedSerbian(line, position, { emotion: 'shout', pitch: 1.15, rate: 1.12 });
+    const lines = gender === 'female' ? SERBIAN_FEMALE_COLLISION_CALLOUTS : SERBIAN_COLLISION_CALLOUTS;
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    this.playLocalizedSerbian(line, position, { gender, emotion: 'shout', rate: 1.08 });
     return line;
   }
 
   /**
    * Trigger car collision or near-accident shout (realistic cooldown, no popups!)
    */
-  public triggerCarCollision(position?: SpatialPosition, hardImpact = false): string {
+  public triggerCarCollision(position?: SpatialPosition, hardImpact = false, driverGender?: 'male' | 'female'): string {
     const now = Date.now();
     if (now - this.lastCarCrashVoiceTime < 12000) return '';
     this.lastCarCrashVoiceTime = now;
-    const list = hardImpact ? SERBIAN_CAR_CRASH_CALLOUTS : SERBIAN_DRIVER_CALLOUTS;
+    const gender = driverGender ?? (Math.random() < 0.5 ? 'female' : 'male');
+    const list = gender === 'female'
+      ? SERBIAN_FEMALE_DRIVER_CALLOUTS
+      : hardImpact ? SERBIAN_CAR_CRASH_CALLOUTS : SERBIAN_DRIVER_CALLOUTS;
     const line = list[Math.floor(Math.random() * list.length)];
-    this.playLocalizedSerbian(line, position, { emotion: 'shout', pitch: 1.25, rate: 1.15 });
+    this.playLocalizedSerbian(line, position, { gender, emotion: 'shout', rate: 1.1 });
     return line;
   }
 
   /**
    * Trigger randomized street pedestrian banter
    */
-  public triggerRandomNpcBanter(position?: SpatialPosition): string {
-    const line = SERBIAN_NPC_BANTER[Math.floor(Math.random() * SERBIAN_NPC_BANTER.length)];
-    this.playLocalizedSerbian(line, position, { emotion: 'street', pitch: 1.05 });
+  public triggerRandomNpcBanter(position?: SpatialPosition, speakerGender: 'male' | 'female' | 'neutral' = 'neutral'): string {
+    const gender = speakerGender === 'neutral' ? (Math.random() < 0.5 ? 'female' : 'male') : speakerGender;
+    const lines = gender === 'female' ? SERBIAN_FEMALE_NPC_BANTER : SERBIAN_MALE_NPC_BANTER;
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    this.playLocalizedSerbian(line, position, { gender, emotion: 'street' });
     return line;
   }
 
   /**
    * Trigger angry or hurried driver callout
    */
-  public triggerDriverCallout(position?: SpatialPosition): string {
-    const line = SERBIAN_DRIVER_CALLOUTS[Math.floor(Math.random() * SERBIAN_DRIVER_CALLOUTS.length)];
-    this.playLocalizedSerbian(line, position, { emotion: 'shout', pitch: 1.2, rate: 1.15 });
+  public triggerDriverCallout(position?: SpatialPosition, gender: 'male' | 'female' = 'male'): string {
+    const lines = gender === 'female' ? SERBIAN_FEMALE_DRIVER_CALLOUTS : SERBIAN_DRIVER_CALLOUTS;
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    this.playLocalizedSerbian(line, position, { gender, emotion: 'shout', rate: 1.08 });
     return line;
   }
 

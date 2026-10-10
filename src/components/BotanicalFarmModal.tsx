@@ -10,7 +10,8 @@ import {
   CheckCircle,
   Plus,
 } from 'lucide-react';
-import { PlantPlot, InventoryItem } from '../services/streetEconomy';
+import { PlantPlot, InventoryItem, isSeedCompatibleWithDistrict } from '../services/streetEconomy';
+import { getPozarevacDistrict } from '../services/pozarevacDistricts';
 import { audioDsp } from '../services/audioDsp';
 
 export interface BotanicalFarmModalProps {
@@ -18,6 +19,7 @@ export interface BotanicalFarmModalProps {
   onClose: () => void;
   plots: PlantPlot[];
   inventory: InventoryItem[];
+  playerPosition: { x: number; z: number };
   onPlantSeed: (plotId: string, seedItem: InventoryItem) => void;
   onWaterPlot: (plotId: string) => void;
   onHarvestPlot: (plotId: string) => void;
@@ -28,6 +30,7 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
   onClose,
   plots,
   inventory,
+  playerPosition,
   onPlantSeed,
   onWaterPlot,
   onHarvestPlot,
@@ -108,7 +111,12 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          {plots.map((plot) => (
+          {plots.map((plot) => {
+            const distance = Math.hypot(playerPosition.x - plot.coords.x, playerPosition.z - plot.coords.z);
+            const canUsePlot = plot.isUnlocked && distance <= 4.5;
+            const districtName = getPozarevacDistrict(plot.districtId)?.name;
+            const plotSeeds = availableSeeds.filter((seed) => isSeedCompatibleWithDistrict(seed.itemId, plot.districtId));
+            return (
             <div
               key={plot.id}
               className={`p-4 rounded-2xl border transition ${
@@ -123,6 +131,7 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
                   <div>
                     <div className="text-xs font-black text-white">{plot.locationName}</div>
                     <div className="text-[10px] text-slate-400">
+                      {districtName && <span className="text-emerald-300">{districtName} · </span>}
                       {plot.seedName ? (
                         <span>Sorta: <strong className="text-cyan-300">{plot.seedName}</strong></span>
                       ) : (
@@ -136,6 +145,16 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
                   {getStageLabel(plot.stage)}
                 </span>
               </div>
+
+              {!plot.isUnlocked ? (
+                <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-[10px] text-amber-200">
+                  🔒 Parcela je zaključana — završi sledeće poglavlje priče da je otključaš.
+                </div>
+              ) : !canUsePlot ? (
+                <div className="mb-2 rounded-lg border border-cyan-500/25 bg-cyan-950/25 px-2 py-1.5 text-[10px] text-cyan-100">
+                  Priđi fizičkoj leji na najviše 4,5 m · udaljenost {distance.toFixed(1)} m. Pritisni <strong>E</strong> pored leje.
+                </div>
+              ) : null}
 
               {/* Growth Progress Bar */}
               {plot.stage !== 'empty' && (
@@ -165,13 +184,15 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
               <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
                 <div className="flex items-center gap-2">
                   <button
-                    disabled={plot.watered || plot.stage === 'empty'}
+                    disabled={!canUsePlot || plot.watered || plot.stage === 'empty'}
                     onClick={() => {
                       onWaterPlot(plot.id);
                       audioDsp.playQuantumBurst();
                     }}
                     className={`px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
-                      plot.watered
+                      !canUsePlot
+                        ? 'bg-slate-900 text-slate-600 cursor-not-allowed'
+                        : plot.watered
                         ? 'bg-cyan-950/80 border border-cyan-500/30 text-cyan-400 cursor-default'
                         : plot.stage === 'empty'
                         ? 'bg-slate-900 text-slate-600 cursor-not-allowed'
@@ -186,22 +207,24 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
                 <div>
                   {plot.stage === 'empty' ? (
                     <button
+                      disabled={!canUsePlot}
                       onClick={() => {
                         setSelectedPlotForPlanting(plot.id);
                         audioDsp.playRotateTick();
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-slate-950 font-black text-xs transition cursor-pointer flex items-center gap-1"
+                      className={`px-3 py-1.5 rounded-xl font-black text-xs transition flex items-center gap-1 ${canUsePlot ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-slate-950 cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>POSADI SEME</span>
                     </button>
                   ) : plot.stage === 'ready' ? (
                     <button
+                      disabled={!canUsePlot}
                       onClick={() => {
                         onHarvestPlot(plot.id);
                         audioDsp.playHarvestChime();
                       }}
-                      className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:brightness-110 text-slate-950 font-black text-xs transition cursor-pointer flex items-center gap-1 shadow-lg shadow-amber-500/20 animate-pulse"
+                      className={`px-4 py-1.5 rounded-xl font-black text-xs transition flex items-center gap-1 ${canUsePlot ? 'bg-gradient-to-r from-amber-500 to-yellow-400 hover:brightness-110 text-slate-950 cursor-pointer shadow-lg shadow-amber-500/20 animate-pulse' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
                     >
                       <Scissors className="w-3.5 h-3.5" />
                       <span>OBERI PLODOVE! 🌾</span>
@@ -213,18 +236,18 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
               </div>
 
               {/* Seed Picker Dropdown for this plot */}
-              {selectedPlotForPlanting === plot.id && (
+              {selectedPlotForPlanting === plot.id && canUsePlot && (
                 <div className="mt-3 p-3 rounded-xl bg-slate-900 border border-emerald-500/50 space-y-2">
                   <div className="text-[10px] font-bold text-emerald-300">
                     Izaberi seme iz ranca za sadnju:
                   </div>
-                  {availableSeeds.length === 0 ? (
+                  {plotSeeds.length === 0 ? (
                     <div className="text-[10px] text-slate-400 py-1">
-                      Nemaš semenke u rancu! Idi na Ulični Buvljak i kupi semena.
+                      Nemaš kompatibilno seme u rancu! Kupi sortu za ovaj reon na Buvljaku.
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
-                      {availableSeeds.map((s) => (
+                      {plotSeeds.map((s) => (
                         <button
                           key={s.itemId}
                           onClick={() => {
@@ -252,7 +275,8 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

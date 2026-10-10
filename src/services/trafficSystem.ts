@@ -3,6 +3,7 @@ import { audioDsp } from './audioDsp';
 import { CITY_BUILDING_BOXES } from './weatherManager';
 import { audioLocalizationManager } from './audioLocalizationManager';
 import { SpatialHash2D } from './spatialHash';
+import { getVehicleImpactContact } from './collisionGeometry';
 
 export interface Vehicle {
   mesh: THREE.Group;
@@ -240,14 +241,22 @@ export class TrafficSystem {
 
       // Check distance to player
       const distToPlayer = v.mesh.position.distanceTo(playerPos);
+      const vehicleImpact = getVehicleImpactContact(playerPos, {
+        x: v.mesh.position.x,
+        z: v.mesh.position.z,
+        halfWidth: v.type === 'suv' ? 0.95 : 0.85,
+        halfDepth: v.type === 'suv' ? 1.9 : 1.75,
+        velocityX: v.velocity.x,
+        velocityZ: v.velocity.z,
+      });
       const targetSpeed = v.speed * (this.pursuitMode && v.policeTuning ? 1.32 : 1);
       let effectiveSpeed = targetSpeed;
 
-      // 1. Direct Physical Collision / Impact with Player (< 1.45m)
-      if (distToPlayer < 1.45) {
-        effectiveSpeed = 0; // Emergency brake on impact
+      // 1. Physical AABB impact or close head-on approach.
+      if (vehicleImpact || distToPlayer < 1.45) {
+        effectiveSpeed = 0; // Brake on impact.
         v.velocity.multiplyScalar(Math.max(0, 1 - delta * 12));
-        if (now - this.lastCrashSoundTime > 6500) {
+        if (now - this.lastCrashSoundTime > 1500) {
           this.lastCrashSoundTime = now;
           this.lastDriverVoiceTime = now;
           // Impact sound + tire screech + horn + real driver crash shout (NO UI POPUP WINDOW)
@@ -259,7 +268,7 @@ export class TrafficSystem {
       }
       // 2. Realistic Near Encounter / Pedestrian in Front of Car (< 2.8m)
       else if (distToPlayer < 2.8) {
-        effectiveSpeed = 0.45; // Slow down cautiously
+        effectiveSpeed = Math.min(targetSpeed, 2.5); // Slow down, but retain enough momentum for a readable impact if the player stays in the lane.
         // Realistic driver horn & voice with 16 second cooldown (not spammy!)
         if (now - this.lastDriverVoiceTime > 16000) {
           this.lastDriverVoiceTime = now;

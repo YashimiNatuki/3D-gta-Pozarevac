@@ -3,6 +3,7 @@ import { audioDsp } from './audioDsp';
 import { CITY_BUILDING_BOXES, SceneObstacleBox } from './weatherManager';
 import { PhysicsEngine } from './physicsEngine';
 import { SpatialHash2D } from './spatialHash';
+import { getCameraSafeDistance, getVehicleImpactContact } from './collisionGeometry';
 
 export interface DynamicCollider {
   x: number;
@@ -10,6 +11,8 @@ export interface DynamicCollider {
   halfWidth: number;
   halfDepth: number;
   type?: 'vehicle' | 'prop' | 'barrier';
+  velocityX?: number;
+  velocityZ?: number;
 }
 
 export interface ControllerOptions {
@@ -33,6 +36,7 @@ export class ThirdPersonController {
   public targetDistance = 5.4;
   public minDistance = 1.6;
   public maxDistance = 14.0;
+  private resolvedCameraDistance = 5.4;
 
   public yaw = 0;          // Horizontal orbit angle (radians)
   public targetYaw = 0;
@@ -72,6 +76,7 @@ export class ThirdPersonController {
   private dynamicObstacleHash = new SpatialHash2D<{ minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }>(8);
   public playerRadius = 0.45;
   private lastCollisionSoundTime = 0;
+  private lastVehicleImpactTime = 0;
   public physicsEngine: PhysicsEngine;
 
   // Mode override (e.g. Inspect Close-Up or Top-Down Drone)
@@ -112,7 +117,7 @@ export class ThirdPersonController {
     if (opts.jumpPower) this.jumpPower = opts.jumpPower;
     if (opts.getDynamicColliders) this.getDynamicColliders = opts.getDynamicColliders;
 
-    // Initialize static Požarevac obstacle bounds (Buildings, Planters, Benches, Central Monolith)
+    // Initialize static Požarevac obstacle bounds (Buildings, Planters and visible Benches).
     this.staticObstacles = [
       ...CITY_BUILDING_BOXES.map((b) => ({
         minX: b.minX,
@@ -120,8 +125,6 @@ export class ThirdPersonController {
         minZ: b.minZ,
         maxZ: b.maxZ,
       })),
-      // Central Monolith
-      { minX: -1.3, maxX: 1.3, minZ: -1.3, maxZ: 1.3 },
       // Flower Planters along Tabačka Čaršija
       { minX: -4.3, maxX: -3.3, minZ: -18.5, maxZ: -17.5 },
       { minX: 3.3, maxX: 4.3, minZ: -18.5, maxZ: -17.5 },
@@ -136,7 +139,6 @@ export class ThirdPersonController {
       { minX: -4.6, maxX: -3.8, minZ: 1.1, maxZ: 2.9 },
       { minX: 3.8, maxX: 4.6, minZ: -14.9, maxZ: -13.1 },
       { minX: 3.8, maxX: 4.6, minZ: 1.1, maxZ: 2.9 },
-      { minX: -9.9, maxX: -8.1, minZ: 4.6, maxZ: 5.4 },
     ];
     this.staticObstacles.forEach((obstacle) => this.staticObstacleHash.insert({ ...obstacle, value: obstacle }));
 
@@ -313,9 +315,9 @@ export class ThirdPersonController {
 
     // Gather all active colliders (static buildings/props + dynamic vehicles)
     this.dynamicObstacleHash.clear();
-    if (this.getDynamicColliders) {
-      const dynamics = this.getDynamicColliders();
-      for (const d of dynamics) {
+    const dynamicColliders = this.getDynamicColliders?.() ?? [];
+    if (dynamicColliders.length) {
+      for (const d of dynamicColliders) {
         const collider = {
           minX: d.x - d.halfWidth,
           maxX: d.x + d.halfWidth,
@@ -383,6 +385,34 @@ export class ThirdPersonController {
     }
     this.position.z = newZ;
 
+    // A moving car that reaches the player transfers momentum once per impact window.
+    const impactNow = performance.now();
+    if (impactNow - this.lastVehicleImpactTime >= 1500) {
+      const contact = dynamicColliders
+        .filter((collider) => collider.type === 'vehicle')
+        .map((vehicle) => getVehicleImpactContact(this.position, {
+          x: vehicle.x,
+          z: vehicle.z,
+          halfWidth: vehicle.halfWidth,
+          halfDepth: vehicle.halfDepth,
+          velocityX: vehicle.velocityX ?? 0,
+          velocityZ: vehicle.velocityZ ?? 0,
+        }, this.playerRadius))
+        .find((candidate) => candidate !== null);
+      if (contact) {
+        this.lastVehicleImpactTime = impactNow;
+        const knockback = 4.2 + Math.min(2.0, contact.relativeSpeed * 0.22);
+        this.velocity.x = contact.directionX * knockback;
+        this.velocity.z = contact.directionZ * knockback;
+        if (!this.isJumping) {
+          this.isJumping = true;
+          this.jumpVelocity = 2.4;
+        }
+        audioDsp.playCrashImpact(this.position);
+        this.lastCollisionSoundTime = Date.now();
+      }
+    }
+
     // Boundary clamping (within Požarevac play area)
     const terrainBound = 35.0;
     this.position.x = Math.max(-terrainBound, Math.min(terrainBound, this.position.x));
@@ -431,8 +461,29 @@ export class ThirdPersonController {
     const camX = this.currentTarget.x + Math.sin(this.yaw) * Math.cos(this.pitch) * this.distance;
     const camY = this.currentTarget.y + Math.sin(this.pitch) * this.distance;
     const camZ = this.currentTarget.z + Math.cos(this.yaw) * Math.cos(this.pitch) * this.distance;
-
-    this.camera.position.set(camX, camY, camZ);
+    const desiredCameraPosition = new THREE.Vector3(camX, camY, camZ);
+    const cameraBounds = {
+      minX: Math.min(this.currentTarget.x, camX) - 0.4,
+      maxX: Math.max(this.currentTarget.x, camX) + 0.4,
+      minZ: Math.min(this.currentTarget.z, camZ) - 0.4,
+      maxZ: Math.max(this.currentTarget.z, camZ) + 0.4,
+    };
+    const nearbyObstacles = this.staticObstacleHash.query(cameraBounds);
+    const safeDistance = getCameraSafeDistance(this.currentTarget, desiredCameraPosition, nearbyObstacles);
+    const hasObstruction = safeDistance < this.distance - 0.05;
+    this.resolvedCameraDistance = THREE.MathUtils.damp(
+      this.resolvedCameraDistance,
+      Math.min(this.distance, safeDistance),
+      hasObstruction ? 28 : 5,
+      dt,
+    );
+    const cameraDistance = Math.min(this.resolvedCameraDistance, safeDistance);
+    const camScale = this.distance > 0 ? cameraDistance / this.distance : 1;
+    this.camera.position.set(
+      this.currentTarget.x + (camX - this.currentTarget.x) * camScale,
+      this.currentTarget.y + (camY - this.currentTarget.y) * camScale,
+      this.currentTarget.z + (camZ - this.currentTarget.z) * camScale,
+    );
     this.camera.lookAt(this.currentTarget);
 
     // 8. Dynamic FOV Kick during sprint

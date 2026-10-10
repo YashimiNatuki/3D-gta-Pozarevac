@@ -20,6 +20,7 @@ import {
   DynamicMission,
   INITIAL_DYNAMIC_MISSIONS,
   DynamicMissionEngine,
+  getStoryCampaignMission,
   reconcileMissionCatalog,
   reconcileTurfZones,
   TurfZone,
@@ -49,10 +50,14 @@ import {
   MarketItem,
   InventoryItem,
   PlantPlot,
-  INITIAL_PLANT_PLOTS,
+  POŽAREVAC_MARKET_ITEMS,
+  reconcilePlantPlots,
   TimeOfDay,
   StreetEconomyEngine,
   isWithinMarketZone,
+  getMarketDistrict,
+  isPlantableSeed,
+  isSeedCompatibleWithDistrict,
 } from './services/streetEconomy';
 
 const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
@@ -134,7 +139,7 @@ export function App() {
   const [turfZones, setTurfZones] = useState<TurfZone[]>(() =>
     reconcileTurfZones(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES)
   );
-  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(initialGameProgress?.plantPlots ?? INITIAL_PLANT_PLOTS);
+  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(() => reconcilePlantPlots(initialGameProgress?.plantPlots));
   const [inventory, setInventory] = useState<InventoryItem[]>(initialGameProgress?.inventory ?? INITIAL_INVENTORY);
   const [playerPos, setPlayerPos] = useState({ x: 0, z: 4, heading: 0 });
   const gameProgress = useMemo<GameProgressData>(() => ({
@@ -267,7 +272,7 @@ export function App() {
           setQuests(saved.quests);
           setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
           setTurfZones(reconcileTurfZones(saved.turfZones));
-          setPlantPlots(saved.plantPlots);
+          setPlantPlots(reconcilePlantPlots(saved.plantPlots));
           setInventory(saved.inventory);
         }
         console.log('[Firestore Sync] Učitan napredak iz oblaka za:', currentUser.email);
@@ -551,10 +556,16 @@ export function App() {
 
     resolvingMissionIdsRef.current.add(missionId);
     setMissionFeedback(null);
-    setDynamicMissions((current) => current.map((item) => item.id === missionId && item.status === 'active'
-      ? { ...item, status: 'completed', failureReason: undefined }
-      : item
-    ));
+    setDynamicMissions((current) => {
+      const completed = current.map((item) => item.id === missionId && item.status === 'active'
+        ? { ...item, status: 'completed' as const, failureReason: undefined }
+        : item
+      );
+      const nextChapter = mission.campaignChapter ? getStoryCampaignMission(mission.campaignChapter + 1) : null;
+      return nextChapter && !completed.some((item) => item.id === nextChapter.id)
+        ? [nextChapter, ...completed]
+        : completed;
+    });
     // Mission XP is already accompanied by its explicit cash/respect reward; do not award XP-derived cash twice.
     handleScoreIncrement(mission.rewardXp, 0, 0);
     setCharacterStats((stats) => ({
@@ -572,6 +583,11 @@ export function App() {
         : zone
       ));
       audioDsp.playTurfWarVictory();
+    }
+
+    if (mission.unlockPlantPlotIds?.length) {
+      const unlockedPlotIds = new Set(mission.unlockPlantPlotIds);
+      setPlantPlots((plots) => plots.map((plot) => unlockedPlotIds.has(plot.id) ? { ...plot, isUnlocked: true } : plot));
     }
 
     if (mission.rewardGearName) {
@@ -609,11 +625,13 @@ export function App() {
       setMarketFeedback('Kupovina je dostupna samo kod Buvljaka kod Pruge. Priđi tezgi na najviše 7 m.');
       return;
     }
-    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
+    const catalogItem = POŽAREVAC_MARKET_ITEMS.find((candidate) => candidate.id === item.id);
+    if (!catalogItem || !Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
       setMarketFeedback('Količina ili cena kupovine nije ispravna.');
       return;
     }
-    if (characterStats.cash < price) {
+    const totalPrice = StreetEconomyEngine.calculateItemPrices(catalogItem, timeOfDay).buy * quantity;
+    if (characterStats.cash < totalPrice) {
       setMarketFeedback('Nemaš dovoljno keša za ovu kupovinu.');
       return;
     }
@@ -623,7 +641,7 @@ export function App() {
     setMarketFeedback(wrongTradeItem
       ? `Kupovina je završena, ali ugovor traži ${activeTradeMission.requiredTradeItemName ?? 'drugi artikal'}.`
       : null);
-    setCharacterStats((st) => ({ ...st, cash: st.cash - price }));
+    setCharacterStats((st) => ({ ...st, cash: st.cash - totalPrice }));
     setInventory((inv) => {
       const existing = inv.find((i) => i.itemId === item.id);
       if (existing) {
@@ -635,11 +653,11 @@ export function App() {
         ...inv,
         {
           itemId: item.id,
-          name: item.name,
+          name: catalogItem.name,
           quantity,
-          icon: item.icon,
-          category: item.category,
-          sellPrice: item.baseSellPrice,
+          icon: catalogItem.icon,
+          category: catalogItem.category,
+          sellPrice: catalogItem.baseSellPrice,
         },
       ];
     });
@@ -661,8 +679,9 @@ export function App() {
   };
 
   const handleSellItem = (invItem: InventoryItem, quantity: number, price: number) => {
-    if (!isWithinMarketZone(playerPos, 'sell')) {
-      setMarketFeedback('Prodaja je dostupna samo na Tabačkoj Čaršiji. Priđi označenom mestu na najviše 7 m.');
+    const marketDistrict = getMarketDistrict(playerPos, 'sell');
+    if (!marketDistrict) {
+      setMarketFeedback('Prodaja je dostupna na označenim pijacama i reonskim tezgama. Priđi najbližoj na najviše 7 m.');
       return;
     }
     const currentHolding = inventory.find((item) => item.itemId === invItem.itemId)?.quantity ?? 0;
@@ -675,7 +694,11 @@ export function App() {
     setMarketFeedback(wrongTradeItem
       ? `Prodaja je završena, ali ova roba nije teret aktivnog ugovora${activeTradeMission.requiredTradeItemName ? ` (${activeTradeMission.requiredTradeItemName})` : ''}.`
       : null);
-    const totalCash = price * quantity;
+    const marketItem = POŽAREVAC_MARKET_ITEMS.find((item) => item.id === invItem.itemId);
+    const unitPrice = marketItem
+      ? StreetEconomyEngine.calculateItemPrices(marketItem, timeOfDay, marketDistrict.id).sell
+      : invItem.sellPrice;
+    const totalCash = unitPrice * quantity;
     setCharacterStats((st) => ({ ...st, cash: st.cash + totalCash }));
 
     setInventory((inv) => {
@@ -702,13 +725,16 @@ export function App() {
 
   // Botanical Farming Handlers
   const handlePlantSeed = (plotId: string, seedItem: InventoryItem) => {
+    const plot = plantPlots.find((candidate) => candidate.id === plotId);
+    const ownedSeed = inventory.find((item) => item.itemId === seedItem.itemId && item.category === 'seeds' && item.quantity > 0);
+    if (!plot || !plot.isUnlocked || !ownedSeed || !isPlantableSeed(ownedSeed.itemId) || !isSeedCompatibleWithDistrict(ownedSeed.itemId, plot.districtId) || plot.stage !== 'empty' || Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) > 4.5) return;
     setPlantPlots((plots) =>
       plots.map((p) => {
         if (p.id === plotId) {
           return {
             ...p,
-            plantedSeedId: seedItem.itemId,
-            seedName: seedItem.name,
+            plantedSeedId: ownedSeed.itemId,
+            seedName: ownedSeed.name,
             growthProgress: 5,
             stage: 'seedling',
             watered: false,
@@ -722,12 +748,14 @@ export function App() {
     // Consume 1 seed from inventory
     setInventory((inv) =>
       inv
-        .map((i) => (i.itemId === seedItem.itemId ? { ...i, quantity: i.quantity - 1 } : i))
+        .map((i) => (i.itemId === ownedSeed.itemId ? { ...i, quantity: i.quantity - 1 } : i))
         .filter((i) => i.quantity > 0)
     );
   };
 
   const handleWaterPlot = (plotId: string) => {
+    const plot = plantPlots.find((candidate) => candidate.id === plotId);
+    if (!plot || !plot.isUnlocked || plot.stage === 'empty' || plot.watered || Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) > 4.5) return;
     setPlantPlots((plots) =>
       plots.map((p) => (p.id === plotId ? { ...p, watered: true } : p))
     );
@@ -735,7 +763,7 @@ export function App() {
 
   const handleHarvestPlot = (plotId: string) => {
     const plot = plantPlots.find((p) => p.id === plotId);
-    if (!plot || !plot.readyHarvestYield) return;
+    if (!plot || !plot.isUnlocked || plot.stage !== 'ready' || !plot.readyHarvestYield || Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) > 4.5) return;
 
     const yieldData = plot.readyHarvestYield;
 
@@ -780,8 +808,9 @@ export function App() {
       })
     );
 
-    if (plot.id === 'plot_3' && Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) <= 7) {
-      const activeHarvestMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'plant_harvest');
+    if (Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) <= 4.5) {
+      const activeHarvestMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'plant_harvest' &&
+        (mission.requiredPlantPlotId ? mission.requiredPlantPlotId === plot.id : plot.id === 'plot_3'));
       if (activeHarvestMission) {
         const harvestedMission = { ...activeHarvestMission, progress: { ...activeHarvestMission.progress, harvested: true } };
         const advancedMission = (harvestedMission.checkpointIndex ?? 0) === 0
@@ -793,6 +822,7 @@ export function App() {
         if (advancedMission !== harvestedMission) {
           setMissionFeedback(advancedMission.checkpoints?.[advancedMission.checkpointIndex ?? 0]?.label ?? 'Berba je evidentirana; sledeći cilj je označen.');
         }
+        if (!advancedMission.checkpoints?.length) handleCompleteDynamicMission(advancedMission.id, advancedMission);
       }
     }
   };
@@ -834,7 +864,7 @@ export function App() {
       setQuests(saved.quests);
       setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
       setTurfZones(reconcileTurfZones(saved.turfZones));
-      setPlantPlots(saved.plantPlots);
+      setPlantPlots(reconcilePlantPlots(saved.plantPlots));
       setInventory(saved.inventory);
     }
     if (data.vaultEntities && Array.isArray(data.vaultEntities)) {
@@ -886,6 +916,7 @@ export function App() {
             dynamicMissions={dynamicMissions}
             onCompleteDynamicMission={handleCompleteDynamicMission}
             plantPlots={plantPlots}
+            onInteractWithPlot={() => setIsFarmOpen(true)}
             onInteractWithPoi={handleInteractWithPoi}
             onNearPoiChange={setNearPoi}
             nearPoi={nearPoi}
@@ -1045,6 +1076,7 @@ export function App() {
         timeOfDay={timeOfDay}
         canBuyHere={isWithinMarketZone(playerPos, 'buy')}
         canSellHere={isWithinMarketZone(playerPos, 'sell')}
+        marketDistrictId={getMarketDistrict(playerPos, 'sell')?.id}
         marketFeedback={marketFeedback}
         onBuyItem={handleBuyItem}
         onSellItem={handleSellItem}
@@ -1056,6 +1088,7 @@ export function App() {
         onClose={() => setIsFarmOpen(false)}
         plots={plantPlots}
         inventory={inventory}
+        playerPosition={playerPos}
         onPlantSeed={handlePlantSeed}
         onWaterPlot={handleWaterPlot}
         onHarvestPlot={handleHarvestPlot}

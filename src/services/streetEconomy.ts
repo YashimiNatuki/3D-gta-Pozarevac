@@ -1,10 +1,12 @@
-// [AiChatBratina v10.0] - Požarevac Street Economy, Trading & Botanical Farming Engine
+// Požarevac district-aware street economy, trading & botanical farming.
+import { findMarketDistrict, POZAREVAC_DISTRICTS, type PozarevacDistrictId } from './pozarevacDistricts';
 export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
 
 export interface MarketItem {
   id: string;
   name: string;
   category: 'seeds' | 'produce' | 'contraband' | 'electronics' | 'gear' | 'booster';
+  districtId?: PozarevacDistrictId;
   baseBuyPrice: number;
   baseSellPrice: number;
   description: string;
@@ -24,6 +26,7 @@ export interface InventoryItem {
 
 export interface PlantPlot {
   id: string;
+  districtId?: PozarevacDistrictId;
   locationName: string;
   isUnlocked: boolean;
   coords: { x: number; z: number };
@@ -48,9 +51,11 @@ export const POZAREVAC_MARKET_ZONES = {
 export type MarketZoneId = keyof typeof POZAREVAC_MARKET_ZONES;
 
 export function isWithinMarketZone(position: { x: number; z: number }, zoneId: MarketZoneId): boolean {
-  const zone = POZAREVAC_MARKET_ZONES[zoneId];
-  return Number.isFinite(position.x) && Number.isFinite(position.z) &&
-    Math.hypot(position.x - zone.x, position.z - zone.z) <= zone.radius;
+  return findMarketDistrict(position, zoneId) !== null;
+}
+
+export function getMarketDistrict(position: { x: number; z: number }, zoneId: MarketZoneId) {
+  return findMarketDistrict(position, zoneId);
 }
 
 export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
@@ -59,6 +64,7 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
     id: 'seed_cacalica',
     name: 'Čačalica Bio-Seme',
     category: 'seeds',
+    districtId: 'cacalica',
     baseBuyPrice: 200,
     baseSellPrice: 80,
     description: 'Autohtono seme sa obronaka Čačalice. Brzo raste i daje lekovito lišće za čajeve i meleme.',
@@ -80,10 +86,57 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
     id: 'seed_zlatni_bos',
     name: 'Zlatni Hibrid Đurđevak',
     category: 'seeds',
+    districtId: 'hipodrom',
     baseBuyPrice: 1200,
     baseSellPrice: 500,
     description: 'Retka sorta sa požarevačkog hipodroma. Izuzetno osetljiva na zalivanje, vredi celo bogatstvo.',
     icon: '✨',
+    rarity: 'epic',
+  },
+  {
+    id: 'seed_djura_neon_mint',
+    name: 'Đura Neon Nana',
+    category: 'seeds',
+    districtId: 'djura',
+    baseBuyPrice: 320,
+    baseSellPrice: 110,
+    description: 'Fiktivna gradska sorta vezana za lokalni reon Đure; mali prostor, stabilan cyber-list.',
+    icon: '🍃',
+    rarity: 'common',
+  },
+  {
+    id: 'seed_tabacka_basil',
+    name: 'Tabačka Modra Bosiljka',
+    category: 'seeds',
+    districtId: 'blok-c',
+    baseBuyPrice: 440,
+    baseSellPrice: 160,
+    description: 'Fiktivna sorta za bašte Bloka C; noćna prodaja prati promet kafića.',
+    icon: '🌱',
+    nightPriceMultiplier: 1.25,
+    rarity: 'common',
+  },
+  {
+    id: 'seed_busije_berry',
+    name: 'Busije Crvena Bobica',
+    category: 'seeds',
+    districtId: 'busije',
+    baseBuyPrice: 680,
+    baseSellPrice: 245,
+    description: 'Fiktivna bobičasta sorta iz Busija sa stabilnim prinosom i dobrom potražnjom.',
+    icon: '🍒',
+    rarity: 'rare',
+  },
+  {
+    id: 'seed_djurdjeve_rose',
+    name: 'Đurđeve Rupe — Srebrna Ruža',
+    category: 'seeds',
+    districtId: 'djurdjeve-rupe',
+    baseBuyPrice: 960,
+    baseSellPrice: 380,
+    description: 'Retka, potpuno izmišljena ukrasna sorta iz lokalnog reona Đurđevih rupa.',
+    icon: '🌹',
+    nightPriceMultiplier: 1.35,
     rarity: 'epic',
   },
 
@@ -92,6 +145,7 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
     id: 'produce_cacalica_tea',
     name: 'Čačalica Eko-Ekstrakt',
     category: 'produce',
+    districtId: 'cacalica',
     baseBuyPrice: 600,
     baseSellPrice: 520,
     description: 'Sveže obrani i osušeni izdanci sa Čačalice. Pijačni trgovci plaćaju suvim zlatom.',
@@ -113,10 +167,57 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
     id: 'produce_zlatna_berba',
     name: 'Zlatna Kruna Žetve',
     category: 'produce',
+    districtId: 'hipodrom',
     baseBuyPrice: 3800,
     baseSellPrice: 3400,
     description: 'Kraljevska žetva sa tajnih plantaža. Kupci sa Starog Korzoa se otimaju za svaku grančicu.',
     icon: '👑',
+    rarity: 'epic',
+  },
+  {
+    id: 'produce_djura_neon_mint',
+    name: 'Đura Neon Nana',
+    category: 'produce',
+    districtId: 'djura',
+    baseBuyPrice: 720,
+    baseSellPrice: 560,
+    description: 'Fiktivan mirisni list sa lokalne leje; cena zavisi od reona prodaje.',
+    icon: '🍃',
+    rarity: 'common',
+  },
+  {
+    id: 'produce_tabacka_basil',
+    name: 'Modra Bosiljka Bloka C',
+    category: 'produce',
+    districtId: 'blok-c',
+    baseBuyPrice: 920,
+    baseSellPrice: 680,
+    description: 'Cyber-folklorna baštenska sorta za kuvarske tezge i kolekcionare.',
+    icon: '🌿',
+    nightPriceMultiplier: 1.25,
+    rarity: 'rare',
+  },
+  {
+    id: 'produce_busije_berry',
+    name: 'Busije Crvena Bobica',
+    category: 'produce',
+    districtId: 'busije',
+    baseBuyPrice: 1150,
+    baseSellPrice: 860,
+    description: 'Fiktivna bobičasta žetva sa višom potražnjom van centra.',
+    icon: '🍒',
+    rarity: 'rare',
+  },
+  {
+    id: 'produce_djurdjeve_rose',
+    name: 'Srebrna Ruža Đurđevih Rupa',
+    category: 'produce',
+    districtId: 'djurdjeve-rupe',
+    baseBuyPrice: 1950,
+    baseSellPrice: 1480,
+    description: 'Retka ukrasna sorta iz fiktivnog lore-a; kolekcionarska roba.',
+    icon: '🌹',
+    nightPriceMultiplier: 1.35,
     rarity: 'epic',
   },
 
@@ -207,6 +308,7 @@ export const POŽAREVAC_MARKET_ITEMS: MarketItem[] = [
 export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
   {
     id: 'plot_1',
+    districtId: 'gradski-park',
     locationName: 'Gradski Park - Tajna Saksija 1',
     isUnlocked: true,
     coords: { x: -11, z: 6 },
@@ -219,6 +321,7 @@ export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
   },
   {
     id: 'plot_2',
+    districtId: 'gradski-park',
     locationName: 'Gradski Park - Tajna Saksija 2',
     isUnlocked: true,
     coords: { x: -13, z: 8 },
@@ -236,6 +339,7 @@ export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
   },
   {
     id: 'plot_3',
+    districtId: 'cacalica',
     locationName: 'Čačalica Šuma - Kvantna Leja 3',
     isUnlocked: true,
     coords: { x: 15, z: 12 },
@@ -248,6 +352,7 @@ export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
   },
   {
     id: 'plot_4',
+    districtId: 'stari-korzo',
     locationName: 'Stari Korzo Pasaž - Krovna Žardinjera',
     isUnlocked: false,
     coords: { x: 8, z: -6 },
@@ -258,10 +363,87 @@ export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
     watered: false,
     readyHarvestYield: null,
   },
+  {
+    id: 'plot_djura',
+    districtId: 'djura',
+    locationName: 'Đura — centralna komšijska leja',
+    isUnlocked: true,
+    coords: { x: 5, z: 0 },
+    plantedSeedId: null,
+    seedName: null,
+    growthProgress: 0,
+    stage: 'empty',
+    watered: false,
+    readyHarvestYield: null,
+  },
+  {
+    id: 'plot_blok_c',
+    districtId: 'blok-c',
+    locationName: 'Blok C — Tabačka centar',
+    isUnlocked: false,
+    coords: { x: 4.3, z: -10 },
+    plantedSeedId: null,
+    seedName: null,
+    growthProgress: 0,
+    stage: 'empty',
+    watered: false,
+    readyHarvestYield: null,
+  },
+  {
+    id: 'plot_busije',
+    districtId: 'busije',
+    locationName: 'Busije — bašta na obodu',
+    isUnlocked: false,
+    coords: { x: -25, z: -4 },
+    plantedSeedId: null,
+    seedName: null,
+    growthProgress: 0,
+    stage: 'empty',
+    watered: false,
+    readyHarvestYield: null,
+  },
+  {
+    id: 'plot_djurdjeve_rupe',
+    districtId: 'djurdjeve-rupe',
+    locationName: 'Đurđeve rupe — skrivena leja',
+    isUnlocked: false,
+    coords: { x: -8, z: -18 },
+    plantedSeedId: null,
+    seedName: null,
+    growthProgress: 0,
+    stage: 'empty',
+    watered: false,
+    readyHarvestYield: null,
+  },
+  {
+    id: 'plot_hipodrom',
+    districtId: 'hipodrom',
+    locationName: 'Hipodrom — ogledna parcela',
+    isUnlocked: false,
+    coords: { x: -28, z: 26 },
+    plantedSeedId: null,
+    seedName: null,
+    growthProgress: 0,
+    stage: 'empty',
+    watered: false,
+    readyHarvestYield: null,
+  },
 ];
 
+export function reconcilePlantPlots(savedPlots: PlantPlot[] | undefined): PlantPlot[] {
+  const savedById = new Map((savedPlots ?? []).filter((plot) => typeof plot?.id === 'string').map((plot) => [plot.id, plot]));
+  const canonical = INITIAL_PLANT_PLOTS.map((fallback) => {
+    const saved = savedById.get(fallback.id);
+    if (!saved) return { ...fallback, coords: { ...fallback.coords } };
+    const merged = { ...fallback, ...saved, coords: { ...fallback.coords } };
+    if (!merged.districtId) merged.districtId = fallback.districtId;
+    return merged;
+  });
+  return canonical.concat((savedPlots ?? []).filter((plot) => !INITIAL_PLANT_PLOTS.some((fallback) => fallback.id === plot.id)));
+}
+
 export class StreetEconomyEngine {
-  public static calculateItemPrices(item: MarketItem, timeOfDay: TimeOfDay): { buy: number; sell: number } {
+  public static calculateItemPrices(item: MarketItem, timeOfDay: TimeOfDay, districtId?: string): { buy: number; sell: number } {
     let multiplier = 1.0;
     if (timeOfDay === 'night' && item.nightPriceMultiplier) {
       multiplier = item.nightPriceMultiplier;
@@ -270,7 +452,8 @@ export class StreetEconomyEngine {
     }
 
     const buy = Math.round(item.baseBuyPrice * multiplier);
-    const sell = Math.round(item.baseSellPrice * multiplier);
+    const district = districtId ? POZAREVAC_DISTRICTS.find((candidate) => candidate.id === districtId) : undefined;
+    const sell = Math.round(item.baseSellPrice * multiplier * (district?.sellMultiplier ?? 1));
     return { buy, sell };
   }
 
@@ -298,31 +481,9 @@ export class StreetEconomyEngine {
         stage = 'seedling';
       }
 
-      let readyHarvestYield = plot.readyHarvestYield;
-      if (stage === 'ready' && !readyHarvestYield) {
-        if (plot.plantedSeedId === 'seed_cacalica') {
-          readyHarvestYield = {
-            itemId: 'produce_cacalica_tea',
-            itemName: 'Čačalica Eko-Ekstrakt',
-            quantity: Math.floor(2 + Math.random() * 2),
-            value: 1200,
-          };
-        } else if (plot.plantedSeedId === 'seed_cyber_pelcer') {
-          readyHarvestYield = {
-            itemId: 'produce_cyber_bloom',
-            itemName: 'Neonski Cyber Cvet',
-            quantity: Math.floor(1 + Math.random() * 2),
-            value: 2800,
-          };
-        } else if (plot.plantedSeedId === 'seed_zlatni_bos') {
-          readyHarvestYield = {
-            itemId: 'produce_zlatna_berba',
-            itemName: 'Zlatna Kruna Žetve',
-            quantity: 1,
-            value: 5000,
-          };
-        }
-      }
+      const readyHarvestYield = stage === 'ready' && !plot.readyHarvestYield
+        ? makeHarvestYield(plot.id, plot.plantedSeedId)
+        : plot.readyHarvestYield;
 
       return {
         ...plot,
@@ -334,4 +495,32 @@ export class StreetEconomyEngine {
 
     return { updatedPlots, newlyReady };
   }
+}
+
+const CROP_BY_SEED: Record<string, { itemId: string; name: string; min: number; max: number; unitValue: number }> = {
+  seed_cacalica: { itemId: 'produce_cacalica_tea', name: 'Čačalica Eko-Ekstrakt', min: 2, max: 3, unitValue: 520 },
+  seed_cyber_pelcer: { itemId: 'produce_cyber_bloom', name: 'Neonski Cyber Cvet', min: 1, max: 2, unitValue: 1550 },
+  seed_zlatni_bos: { itemId: 'produce_zlatna_berba', name: 'Zlatna Kruna Žetve', min: 1, max: 1, unitValue: 3400 },
+  seed_djura_neon_mint: { itemId: 'produce_djura_neon_mint', name: 'Đura Neon Nana', min: 2, max: 3, unitValue: 560 },
+  seed_tabacka_basil: { itemId: 'produce_tabacka_basil', name: 'Modra Bosiljka Bloka C', min: 2, max: 3, unitValue: 680 },
+  seed_busije_berry: { itemId: 'produce_busije_berry', name: 'Busije Crvena Bobica', min: 2, max: 4, unitValue: 860 },
+  seed_djurdjeve_rose: { itemId: 'produce_djurdjeve_rose', name: 'Srebrna Ruža Đurđevih Rupa', min: 1, max: 2, unitValue: 1480 },
+};
+
+export function isPlantableSeed(seedId: string): boolean {
+  return Boolean(CROP_BY_SEED[seedId]) && POŽAREVAC_MARKET_ITEMS.some((item) => item.id === seedId && item.category === 'seeds');
+}
+
+export function isSeedCompatibleWithDistrict(seedId: string, districtId?: string): boolean {
+  const seed = POŽAREVAC_MARKET_ITEMS.find((item) => item.id === seedId && item.category === 'seeds');
+  return Boolean(seed) && (!seed?.districtId || !districtId || seed.districtId === districtId);
+}
+
+function makeHarvestYield(plotId: string, seedId: string): PlantPlot['readyHarvestYield'] {
+  const crop = CROP_BY_SEED[seedId];
+  if (!crop) return null;
+  let hash = 2166136261;
+  for (const char of `${plotId}:${seedId}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  const quantity = crop.min + ((hash >>> 0) % (crop.max - crop.min + 1));
+  return { itemId: crop.itemId, itemName: crop.name, quantity, value: quantity * crop.unitValue };
 }
