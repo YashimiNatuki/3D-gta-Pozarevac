@@ -1,7 +1,15 @@
 import express from 'express';
 import path from 'path';
+import { createReadStream, promises as fs } from 'node:fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import {
+  isAllowedGoogleVideoUri,
+  isValidVideoOperationName,
+  MAX_GENERATED_VIDEO_BYTES,
+  readResponseBodyLimited,
+} from './src/services/videoDownloadSecurity';
+import { parseSingleByteRange } from './src/services/videoRange';
 
 dotenv.config();
 
@@ -280,6 +288,10 @@ app.post('/api/generate-video', async (req, res) => {
 app.post('/api/video-status', async (req, res) => {
   try {
     const { operationName } = req.body;
+    if (!isValidVideoOperationName(operationName)) {
+      res.status(400).json({ error: { message: 'Invalid generated-video operation name.' } });
+      return;
+    }
     const apiKey = process.env.GEMINI_API_KEY;
     const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
 
@@ -287,8 +299,7 @@ app.post('/api/video-status', async (req, res) => {
       operation: { name: operationName } as any,
     });
 
-    const uri = updated.response?.generatedVideos?.[0]?.video?.uri || null;
-    res.json({ done: !!updated.done, error: updated.error || null, videoUri: uri });
+    res.json({ done: !!updated.done, error: updated.error || null });
   } catch (err: any) {
     console.error('[Veo Status Error]', err);
     res.status(500).json({ error: err.message });
@@ -298,39 +309,90 @@ app.post('/api/video-status', async (req, res) => {
 // 4. Veo Video Download Proxy
 app.post('/api/video-download', async (req, res) => {
   try {
-    const { operationName, videoUri } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    let downloadUri = videoUri;
-    if (!downloadUri && operationName) {
-      const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
-      const updated: any = await ai.operations.getVideosOperation({
-        operation: { name: operationName } as any,
-      });
-      downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+    const { operationName } = req.body;
+    if (!isValidVideoOperationName(operationName)) {
+      res.status(400).json({ error: 'A valid generated-video operation name is required.' });
+      return;
     }
 
-    if (!downloadUri) {
-      res.status(404).json({ error: 'Video URI not found' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+    const updated: any = await ai.operations.getVideosOperation({
+      operation: { name: operationName } as any,
+    });
+    const downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+
+    if (!isAllowedGoogleVideoUri(downloadUri)) {
+      res.status(404).json({ error: 'No downloadable video was returned by the generation service.' });
       return;
     }
 
     const videoRes = await fetch(downloadUri, {
       headers: { 'x-goog-api-key': apiKey || '' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!videoRes.ok) {
-      throw new Error(`Failed to fetch video: ${videoRes.status}`);
+      res.status(502).json({ error: 'The generation service could not provide the video.' });
+      return;
     }
 
+    const body = await readResponseBodyLimited(videoRes);
     res.setHeader('Content-Type', 'video/mp4');
-    const arrayBuffer = await videoRes.arrayBuffer();
-    res.end(Buffer.from(arrayBuffer));
+    res.setHeader('Content-Length', String(body.byteLength));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.end(Buffer.from(body));
   } catch (err: any) {
-    console.error('[Veo Download Error]', err);
-    res.status(500).json({ error: err.message });
+    console.error('[Veo Download Error]', err?.message || 'Unknown error');
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Generated video download failed or exceeded the size limit.' });
+    } else {
+      res.destroy();
+    }
   }
 });
+
+const serveIntroVideo: express.RequestHandler = (req, res, next) => {
+  const videoPath = path.resolve(process.cwd(), 'public/videos/GameIntro_Pozarevac_ThugLife.mp4');
+  void fs.stat(videoPath).then((file) => {
+    if (!file.isFile()) {
+      next();
+      return;
+    }
+
+    const range = parseSingleByteRange(req.headers.range, file.size);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    if (range.kind === 'unsatisfiable') {
+      res.status(416).setHeader('Content-Range', `bytes */${file.size}`).setHeader('Content-Length', '0').end();
+      return;
+    }
+
+    const start = range.kind === 'partial' ? range.start : 0;
+    const end = range.kind === 'partial' ? range.end : file.size - 1;
+    if (range.kind === 'partial') {
+      res.status(206).setHeader('Content-Range', `bytes ${start}-${end}/${file.size}`);
+    }
+    res.setHeader('Content-Length', String(Math.max(0, end - start + 1)));
+
+    if (req.method === 'HEAD' || file.size === 0) {
+      res.end();
+      return;
+    }
+
+    const stream = createReadStream(videoPath, { start, end });
+    stream.on('error', (error) => {
+      if (res.headersSent) res.destroy(error);
+      else res.status(500).end();
+    });
+    stream.pipe(res);
+  }).catch(next);
+};
+
+app.get('/videos/GameIntro_Pozarevac_ThugLife.mp4', serveIntroVideo);
 
 // Serve static frontend files
 const distPath = path.resolve(process.cwd(), 'dist');

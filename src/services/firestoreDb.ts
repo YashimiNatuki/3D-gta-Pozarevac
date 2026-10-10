@@ -1,20 +1,15 @@
 // [AiChatBratina v10.0] - Persistent Firestore Database Integration
 import {
   getFirestore,
-  collection,
   doc,
   setDoc,
   getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  orderBy,
-  limit,
-} from 'firebase/firestore';
+} from 'firebase/firestore/lite';
 import { initializeApp, getApps } from 'firebase/app';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { CharacterStats } from './characterProgress';
 import { TurfZone } from './dynamicMissionEngine';
+import { GameProgressData, isGameProgressData } from './gameProgress';
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
@@ -24,6 +19,7 @@ export interface FirestorePlayerSave {
   userEmail: string;
   stats: CharacterStats;
   turfZones: TurfZone[];
+  gameProgress?: GameProgressData;
   savedAt: string;
   updatedAt: number;
 }
@@ -35,15 +31,23 @@ export const savePlayerProgressToFirestore = async (
   userId: string,
   userEmail: string,
   stats: CharacterStats,
-  turfZones: TurfZone[]
+  turfZones: TurfZone[],
+  gameProgress?: GameProgressData
 ): Promise<void> => {
   try {
     const playerDocRef = doc(db, 'players', userId);
+    const progressSnapshot = gameProgress && isGameProgressData(gameProgress)
+      ? JSON.parse(JSON.stringify({
+          ...gameProgress,
+          dynamicMissions: gameProgress.dynamicMissions.slice(0, 100),
+        })) as GameProgressData
+      : undefined;
     const payload: FirestorePlayerSave = {
       userId,
       userEmail: userEmail || 'anonymous@pozarevac.underground',
       stats,
       turfZones,
+      ...(progressSnapshot ? { gameProgress: progressSnapshot } : {}),
       savedAt: new Date().toISOString(),
       updatedAt: Date.now(),
     };

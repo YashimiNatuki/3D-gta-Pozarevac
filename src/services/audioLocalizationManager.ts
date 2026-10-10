@@ -149,10 +149,11 @@ class AudioLocalizationManager {
     }
     this.lastSpokenTime = now;
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    // Native speech cannot be spatially positioned. Use exactly one backend per event.
+    if (!position && typeof window !== 'undefined' && 'speechSynthesis' in window) {
       this.speakWithNativeVoice(text, options);
+      return;
     }
-    // High-octane procedural Balkan formant synthesis & spatial panner backing
     this.synthesizeBalkanFormants(text, position, options);
   }
 

@@ -1,9 +1,16 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { createReadStream, promises as fs } from 'node:fs';
 import {defineConfig, Plugin} from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import {
+  isAllowedGoogleVideoUri,
+  isValidVideoOperationName,
+  readResponseBodyLimited,
+} from './src/services/videoDownloadSecurity.js';
+import { parseSingleByteRange } from './src/services/videoRange.js';
 
 dotenv.config();
 
@@ -11,6 +18,60 @@ function geminiChatApiPlugin(): Plugin {
   return {
     name: 'gemini-chat-api',
     configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const requestPath = (req.url ?? '/').split('?')[0];
+        if ((req.method !== 'GET' && req.method !== 'HEAD') || requestPath !== '/videos/GameIntro_Pozarevac_ThugLife.mp4') {
+          next();
+          return;
+        }
+
+        const videoPath = path.resolve(process.cwd(), 'public/videos/GameIntro_Pozarevac_ThugLife.mp4');
+        void fs.stat(videoPath).then((file) => {
+          if (!file.isFile()) {
+            next();
+            return;
+          }
+
+          const range = parseSingleByteRange(req.headers.range, file.size);
+          res.setHeader('Content-Type', 'video/mp4');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+
+          if (range.kind === 'unsatisfiable') {
+            res.statusCode = 416;
+            res.setHeader('Content-Range', `bytes */${file.size}`);
+            res.setHeader('Content-Length', '0');
+            res.end();
+            return;
+          }
+
+          const start = range.kind === 'partial' ? range.start : 0;
+          const end = range.kind === 'partial' ? range.end : file.size - 1;
+          if (range.kind === 'partial') {
+            res.statusCode = 206;
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${file.size}`);
+          } else {
+            res.statusCode = 200;
+          }
+          res.setHeader('Content-Length', String(Math.max(0, end - start + 1)));
+
+          if (req.method === 'HEAD' || file.size === 0) {
+            res.end();
+            return;
+          }
+
+          const stream = createReadStream(videoPath, { start, end });
+          stream.on('error', (error) => {
+            if (res.headersSent) res.destroy(error);
+            else {
+              res.statusCode = 500;
+              res.end();
+            }
+          });
+          stream.pipe(res);
+        }).catch(next);
+      });
+
       // 1. Chat API with Search Grounding or Maps Grounding & Model Selection
       server.middlewares.use('/api/chat', async (req, res) => {
         if (req.method !== 'POST') {
@@ -161,6 +222,12 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
           try {
             const parsed = JSON.parse(body || '{}');
             const { operationName } = parsed;
+            if (!isValidVideoOperationName(operationName)) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: { message: 'Invalid generated-video operation name.' } }));
+              return;
+            }
 
             const apiKey = process.env.GEMINI_API_KEY;
             const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
@@ -169,9 +236,8 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
               operation: { name: operationName } as any,
             });
 
-            const uri = updated.response?.generatedVideos?.[0]?.video?.uri || null;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ done: !!updated.done, error: updated.error || null, videoUri: uri }));
+            res.end(JSON.stringify({ done: !!updated.done, error: updated.error || null }));
           } catch (err: any) {
             console.error('[Veo Status Error]', err);
             res.statusCode = 500;
@@ -197,40 +263,52 @@ Povezan si sa Google Search i Google Maps podacima za real-time činjenice, geol
         req.on('end', async () => {
           try {
             const parsed = JSON.parse(body || '{}');
-            const { operationName, videoUri } = parsed;
-            const apiKey = process.env.GEMINI_API_KEY;
-
-            let downloadUri = videoUri;
-            if (!downloadUri && operationName) {
-              const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
-              const updated: any = await ai.operations.getVideosOperation({
-                operation: { name: operationName } as any,
-              });
-              downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+            const { operationName } = parsed;
+            if (!isValidVideoOperationName(operationName)) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'A valid generated-video operation name is required.' }));
+              return;
             }
 
-            if (!downloadUri) {
+            const apiKey = process.env.GEMINI_API_KEY;
+            const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+            const updated: any = await ai.operations.getVideosOperation({
+              operation: { name: operationName } as any,
+            });
+            const downloadUri = updated.response?.generatedVideos?.[0]?.video?.uri;
+
+            if (!isAllowedGoogleVideoUri(downloadUri)) {
               res.statusCode = 404;
-              res.end(JSON.stringify({ error: 'Video URI not found' }));
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'No downloadable video was returned by the generation service.' }));
               return;
             }
 
             const videoRes = await fetch(downloadUri, {
               headers: { 'x-goog-api-key': apiKey || '' },
+              redirect: 'error',
+              signal: AbortSignal.timeout(30_000),
             });
 
             if (!videoRes.ok) {
-              throw new Error(`Failed to fetch video: ${videoRes.status}`);
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'The generation service could not provide the video.' }));
+              return;
             }
 
+            const videoBuffer = await readResponseBodyLimited(videoRes);
             res.setHeader('Content-Type', 'video/mp4');
-            const arrayBuffer = await videoRes.arrayBuffer();
-            res.end(Buffer.from(arrayBuffer));
+            res.setHeader('Content-Length', String(videoBuffer.byteLength));
+            res.setHeader('Cache-Control', 'private, no-store');
+            res.end(Buffer.from(videoBuffer));
           } catch (err: any) {
             console.error('[Veo Download Error]', err);
-            res.statusCode = 500;
+            if (res.headersSent) return;
+            res.statusCode = 502;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: err.message }));
+            res.end(JSON.stringify({ error: 'Generated video download failed or exceeded the size limit.' }));
           }
         });
       });
@@ -243,15 +321,41 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), geminiChatApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+      host: '0.0.0.0',
+      allowedHosts: true as const,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules')) {
+              if (id.includes('/firebase/auth')) return 'firebase-auth-vendor';
+              if (id.includes('/firebase/firestore')) return 'firebase-firestore-vendor';
+              if (id.includes('/firebase/')) return 'firebase-core-vendor';
+              if (id.includes('/three/') || id.includes('/cannon-es/')) return 'three-vendor';
+              if (id.includes('/lucide-react/')) return 'icons-vendor';
+              if (id.includes('/react/') || id.includes('/react-dom/')) return 'react-vendor';
+            }
+            if (id.includes('/src/services/')) {
+              if (/characterModel|thirdPersonController|trafficSystem|policeAndDogsSystem|weatherManager|weatherSystem|satelliteTexture|cctvSystem|physicsEngine/.test(id)) {
+                return 'three-engine';
+              }
+              if (/firebase|firestore|googleDrive|googleDocs|googlePicker/.test(id)) return 'integrations';
+              return 'game-services';
+            }
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

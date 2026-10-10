@@ -317,47 +317,8 @@ export class AudioDspEngine {
     this.initContext();
     if (!this.ctx || !this.masterGain) return;
 
-    // Check if browser has speech synthesis available for real human voice
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        const voices = window.speechSynthesis.getVoices();
-        const bestVoice =
-          voices.find(
-            (v) =>
-              v.lang === 'sr-RS' ||
-              v.lang.startsWith('sr') ||
-              v.lang.startsWith('hr') ||
-              v.lang.startsWith('bs') ||
-              v.name.toLowerCase().includes('serbian') ||
-              v.name.toLowerCase().includes('croatian')
-          ) ||
-          voices.find(
-            (v) =>
-              v.lang.startsWith('sl') ||
-              v.lang.startsWith('mk') ||
-              v.lang.startsWith('bg') ||
-              v.lang.startsWith('ru') ||
-              v.lang.startsWith('pl') ||
-              v.lang.startsWith('it')
-          ) ||
-          voices.find((v) => v.default) ||
-          voices[0];
-
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(phrase);
-        if (bestVoice) {
-          utter.voice = bestVoice;
-        }
-        utter.rate = 1.08;
-        utter.pitch = phrase.includes('!') ? 1.15 : 1.0;
-        utter.volume = Math.min(1.0, this.currentVolume * 1.25);
-        window.speechSynthesis.speak(utter);
-      } catch (err) {
-        console.warn('[AudioDSP] Speech synthesis fallback error:', err);
-      }
-    }
-
-    // Native Web Audio DSP Procedural Balkan Street Shouter
+    // Native Web Audio DSP Procedural Balkan Street Shouter.
+    // SpeechSynthesis is owned by AudioLocalizationManager to avoid double playback.
     const now = performance.now();
     if (now - this.lastNpcVoiceTime < 450) return;
     this.lastNpcVoiceTime = now;

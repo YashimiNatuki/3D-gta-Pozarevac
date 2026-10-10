@@ -1,17 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { ThreeCanvas } from './components/ThreeCanvas';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HudOverlay } from './components/HudOverlay';
-import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
-import { AiChatDrawer } from './components/AiChatDrawer';
-import { GraveyardVaultModal } from './components/GraveyardVaultModal';
+import { type GameSaveData } from './components/DriveSyncModal';
 import { EntityItem, initialVaultEntities, SystemEngine } from './services/systemEngine';
-import { VeoStudioModal } from './components/VeoStudioModal';
-import { GameIntroVideoModal } from './components/GameIntroVideoModal';
 import { GtaPožarevacHud } from './components/GtaPožarevacHud';
-import { CharacterCreatorModal } from './components/CharacterCreatorModal';
-import { BratinaPhoneModal } from './components/BratinaPhoneModal';
-import { StreetMarketModal } from './components/StreetMarketModal';
-import { BotanicalFarmModal } from './components/BotanicalFarmModal';
 import { audioDsp } from './services/audioDsp';
 import { initAuth } from './services/firebaseAuth';
 import {
@@ -29,16 +20,23 @@ import {
   DynamicMission,
   INITIAL_DYNAMIC_MISSIONS,
   DynamicMissionEngine,
+  reconcileMissionCatalog,
+  reconcileTurfZones,
   TurfZone,
   INITIAL_TURF_ZONES,
 } from './services/dynamicMissionEngine';
-import { TurfWarModal } from './components/TurfWarModal';
-import { GoogleDocsModal } from './components/GoogleDocsModal';
-import { GoogleMapsModal } from './components/GoogleMapsModal';
-import { GooglePickerModal } from './components/GooglePickerModal';
-import { MasterPlanModal } from './components/MasterPlanModal';
+import {
+  acceptMission,
+  advanceMissionCheckpoint,
+  getMissionActivationBlocker,
+  getMissionCheckpointBlocker,
+  getMissionCompletionBlocker,
+  getWantedLevelAfterMissionAccept,
+  recordTradePurchase,
+  recordTradeSale,
+} from './services/missionRules';
 import { PickedGoogleFile } from './services/googlePicker';
-import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
+import { isGameProgressData, readGameProgress, writeGameProgress, type GameProgressData } from './services/gameProgress';
 import { CctvOverlay } from './components/CctvOverlay';
 import {
   CctvSystem,
@@ -53,11 +51,39 @@ import {
   INITIAL_PLANT_PLOTS,
   TimeOfDay,
   StreetEconomyEngine,
+  isWithinMarketZone,
 } from './services/streetEconomy';
 
+const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
+const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer })));
+const GraveyardVaultModal = React.lazy(() => import('./components/GraveyardVaultModal').then((module) => ({ default: module.GraveyardVaultModal })));
+const VeoStudioModal = React.lazy(() => import('./components/VeoStudioModal').then((module) => ({ default: module.VeoStudioModal })));
+const GameIntroVideoModal = React.lazy(() => import('./components/GameIntroVideoModal').then((module) => ({ default: module.GameIntroVideoModal })));
+const CharacterCreatorModal = React.lazy(() => import('./components/CharacterCreatorModal').then((module) => ({ default: module.CharacterCreatorModal })));
+const BratinaPhoneModal = React.lazy(() => import('./components/BratinaPhoneModal').then((module) => ({ default: module.BratinaPhoneModal })));
+const StreetMarketModal = React.lazy(() => import('./components/StreetMarketModal').then((module) => ({ default: module.StreetMarketModal })));
+const BotanicalFarmModal = React.lazy(() => import('./components/BotanicalFarmModal').then((module) => ({ default: module.BotanicalFarmModal })));
+const TurfWarModal = React.lazy(() => import('./components/TurfWarModal').then((module) => ({ default: module.TurfWarModal })));
+const GoogleDocsModal = React.lazy(() => import('./components/GoogleDocsModal').then((module) => ({ default: module.GoogleDocsModal })));
+const GoogleMapsModal = React.lazy(() => import('./components/GoogleMapsModal').then((module) => ({ default: module.GoogleMapsModal })));
+const GooglePickerModal = React.lazy(() => import('./components/GooglePickerModal').then((module) => ({ default: module.GooglePickerModal })));
+const MasterPlanModal = React.lazy(() => import('./components/MasterPlanModal').then((module) => ({ default: module.MasterPlanModal })));
+
+const loadFirestoreCapability = () => import('./services/firestoreDb');
+
+const ThreeCanvas = React.lazy(() =>
+  import('./components/ThreeCanvas').then((module) => ({ default: module.ThreeCanvas }))
+);
+
 export function App() {
-  const [score, setScore] = useState(1450);
-  const [energyLevel, setEnergyLevel] = useState(78);
+  const [initialGameProgress] = useState(() => readGameProgress());
+  const [progressHydrated, setProgressHydrated] = useState(false);
+  const [localProgressStatus, setLocalProgressStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [cloudProgressStatus, setCloudProgressStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const lastCloudSaveRef = useRef<{ userId: string; signature: string } | null>(null);
+
+  const [score, setScore] = useState(initialGameProgress?.score ?? 1450);
+  const [energyLevel, setEnergyLevel] = useState(initialGameProgress?.energyLevel ?? 78);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [cubeColor, setCubeColor] = useState('#00ffcc');
   const [sphereColor, setSphereColor] = useState('#ff007f');
@@ -78,7 +104,7 @@ export function App() {
   const [vaultEntities, setVaultEntities] = useState<EntityItem[]>(initialVaultEntities);
 
   // GTA Character Progression & Požarevac Quests
-  const [characterStats, setCharacterStats] = useState<CharacterStats>({
+  const [characterStats, setCharacterStats] = useState<CharacterStats>(initialGameProgress?.characterStats ?? {
     level: 1,
     rankTitle: getRankTitle(1),
     xp: 0,
@@ -96,12 +122,31 @@ export function App() {
     equippedGear: [],
   });
 
-  const [quests, setQuests] = useState<Quest[]>(initialQuests);
-  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(INITIAL_DYNAMIC_MISSIONS);
-  const [turfZones, setTurfZones] = useState<TurfZone[]>(INITIAL_TURF_ZONES);
-  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(INITIAL_PLANT_PLOTS);
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
+  const [quests, setQuests] = useState<Quest[]>(initialGameProgress?.quests ?? initialQuests);
+  const [dynamicMissions, setDynamicMissions] = useState<DynamicMission[]>(() =>
+    reconcileMissionCatalog(initialGameProgress?.dynamicMissions ?? INITIAL_DYNAMIC_MISSIONS)
+  );
+  const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
+  const [marketFeedback, setMarketFeedback] = useState<string | null>(null);
+  const resolvingMissionIdsRef = useRef(new Set<string>());
+  const [turfZones, setTurfZones] = useState<TurfZone[]>(() =>
+    reconcileTurfZones(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES)
+  );
+  const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(initialGameProgress?.plantPlots ?? INITIAL_PLANT_PLOTS);
+  const [inventory, setInventory] = useState<InventoryItem[]>(initialGameProgress?.inventory ?? INITIAL_INVENTORY);
   const [playerPos, setPlayerPos] = useState({ x: 0, z: 4, heading: 0 });
+  const gameProgress = useMemo<GameProgressData>(() => ({
+    score,
+    energyLevel,
+    characterStats,
+    quests,
+    dynamicMissions: dynamicMissions.slice(0, 250),
+    turfZones,
+    plantPlots,
+    inventory,
+  }), [score, energyLevel, characterStats, quests, dynamicMissions, turfZones, plantPlots, inventory]);
+  const gameProgressRef = useRef(gameProgress);
+  gameProgressRef.current = gameProgress;
 
   // POI interaction & dialogue trigger state
   const [nearPoi, setNearPoi] = useState<PožarevacPoi | null>(null);
@@ -112,9 +157,18 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
-  const [isIntroOpen, setIsIntroOpen] = useState(false);
+  const [isIntroOpen, setIsIntroOpen] = useState(true);
+  const [hasEnteredGame, setHasEnteredGame] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('gta_pozaravac_intro_video') || null;
+    try {
+      const saved = localStorage.getItem('gta_pozaravac_intro_video');
+      if (!saved) return null;
+      const parsed = new URL(saved, window.location.origin);
+      if (parsed.protocol === 'blob:' || !['http:', 'https:'].includes(parsed.protocol)) return null;
+      return saved;
+    } catch {
+      return null;
+    }
   });
   const [isPhoneOpen, setIsPhoneOpen] = useState(false);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
@@ -179,32 +233,108 @@ export function App() {
     cctvSystemRef.current.pan(dx, dy);
   };
 
-  // Initialize Firebase Auth listener & auto-load Firestore progress
+  // Firebase identity listener; Drive OAuth tokens remain a separate, short-lived capability.
   useEffect(() => {
     const unsubscribe = initAuth(
-      async (user) => {
-        setCurrentUser(user);
-        try {
-          const cloudSave = await loadPlayerProgressFromFirestore(user.uid);
-          if (cloudSave) {
-            setCharacterStats(cloudSave.stats);
-            if (cloudSave.turfZones && cloudSave.turfZones.length > 0) {
-              setTurfZones(cloudSave.turfZones);
-            }
-            console.log('[Firestore Sync] Učitan napredak iz oblaka za:', user.email);
-          }
-        } catch (e) {
-          console.warn('[Firestore Sync] Prvo pokretanje ili greška pri učitavanju:', e);
-        }
-      },
+      (user) => setCurrentUser(user),
       () => {
         setCurrentUser(null);
+        setProgressHydrated(true);
       }
     );
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    setProgressHydrated(false);
+
+    void loadFirestoreCapability().then(({ loadPlayerProgressFromFirestore }) => loadPlayerProgressFromFirestore(currentUser.uid))
+      .then((cloudSave) => {
+        if (cancelled || !cloudSave) return;
+        setCharacterStats(cloudSave.stats);
+        if (cloudSave.turfZones?.length) setTurfZones(reconcileTurfZones(cloudSave.turfZones));
+        if (isGameProgressData(cloudSave.gameProgress)) {
+          const saved = cloudSave.gameProgress;
+          setScore(saved.score);
+          setEnergyLevel(saved.energyLevel);
+          setCharacterStats(saved.characterStats);
+          setQuests(saved.quests);
+          setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
+          setTurfZones(reconcileTurfZones(saved.turfZones));
+          setPlantPlots(saved.plantPlots);
+          setInventory(saved.inventory);
+        }
+        console.log('[Firestore Sync] Učitan napredak iz oblaka za:', currentUser.email);
+      })
+      .catch((error) => {
+        console.warn('[Firestore Sync] Učitavanje nije uspelo; zadržavam lokalni progres:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setProgressHydrated(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!progressHydrated) return;
+    const persistLocally = () => {
+      setLocalProgressStatus(writeGameProgress(gameProgress) ? 'saved' : 'error');
+    };
+    const persistOnPageHide = () => { writeGameProgress(gameProgress); };
+    const timeout = window.setTimeout(persistLocally, 600);
+    window.addEventListener('pagehide', persistOnPageHide);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('pagehide', persistOnPageHide);
+    };
+  }, [gameProgress, progressHydrated]);
+
+  useEffect(() => {
+    if (!currentUser || !progressHydrated) return;
+    let saving = false;
+    let cancelled = false;
+
+    const saveLatestProgress = async () => {
+      const snapshot = gameProgressRef.current;
+      const signature = JSON.stringify(snapshot);
+      const previousSave = lastCloudSaveRef.current;
+      if (saving || (previousSave?.userId === currentUser.uid && previousSave.signature === signature)) return;
+
+      saving = true;
+      setCloudProgressStatus('saving');
+      try {
+        const { savePlayerProgressToFirestore } = await loadFirestoreCapability();
+        await savePlayerProgressToFirestore(
+          currentUser.uid,
+          currentUser.email ?? '',
+          snapshot.characterStats,
+          snapshot.turfZones,
+          snapshot
+        );
+        if (!cancelled) {
+          lastCloudSaveRef.current = { userId: currentUser.uid, signature };
+          setCloudProgressStatus('saved');
+        }
+      } catch (error) {
+        console.warn('[Firestore Sync] Autosave nije uspeo; lokalni save ostaje dostupan:', error);
+        if (!cancelled) setCloudProgressStatus('error');
+      } finally {
+        saving = false;
+      }
+    };
+
+    void saveLatestProgress();
+    const interval = window.setInterval(() => { void saveLatestProgress(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [currentUser, progressHydrated]);
 
   // Periodic Plant Growth Timer (Runs every 3.5 seconds)
   useEffect(() => {
@@ -221,12 +351,30 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setDynamicMissions((current) => {
+        let changed = false;
+        const next = current.map((mission) => {
+          if (mission.status === 'active' && mission.expiresAt && now >= mission.expiresAt) {
+            changed = true;
+            return { ...mission, status: 'failed' as const, failureReason: 'Vreme za zadatak je isteklo.' };
+          }
+          return mission;
+        });
+        return changed ? next : current;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleToggleAudio = () => {
     const newState = audioDsp.toggleBeat();
     setIsAudioPlaying(newState);
   };
 
-  const handleScoreIncrement = (amount: number) => {
+  const handleScoreIncrement = (amount: number, cashBonusMultiplier = 1.5, respectBonus = 2) => {
     setScore((prev) => prev + amount);
     setEnergyLevel((prev) => Math.min(100, prev + 2));
 
@@ -247,8 +395,8 @@ export function App() {
         level: newLevel,
         nextLevelXp: nextXp,
         rankTitle: getRankTitle(newLevel),
-        cash: prev.cash + Math.floor(amount * 1.5),
-        respect: Math.min(100, prev.respect + 2),
+        cash: prev.cash + Math.floor(amount * cashBonusMultiplier),
+        respect: Math.min(100, prev.respect + respectBonus),
       };
     });
   };
@@ -288,7 +436,7 @@ export function App() {
     setQuests((prev) =>
       prev.map((q) => {
         if (q.id === questId && !q.completed) {
-          handleScoreIncrement(q.rewardXp);
+          handleScoreIncrement(q.rewardXp, 0, 0);
           setCharacterStats((st) => ({
             ...st,
             cash: st.cash + q.rewardCash,
@@ -306,7 +454,7 @@ export function App() {
     audioDsp.playHarvestChime();
     setActivePoiDialogue({ poi, timestamp: Date.now() });
     setIsChatOpen(true);
-    handleScoreIncrement(poi.rewardXp);
+    handleScoreIncrement(poi.rewardXp, 0, 0);
     setCharacterStats((st) => ({
       ...st,
       cash: st.cash + poi.rewardCash,
@@ -315,78 +463,136 @@ export function App() {
   };
 
   // Dynamic Mission Handlers
-  const handleActivateMission = (missionId: string) => {
-    setDynamicMissions((prev) =>
-      prev.map((m) => (m.id === missionId ? { ...m, status: 'active' } : m))
-    );
+  const handleActivateMission = (missionId: string): string | null => {
+    const mission = dynamicMissions.find((item) => item.id === missionId);
+    if (!mission) return 'Zadatak više nije dostupan.';
+    const activeMission = dynamicMissions.find((item) => item.status === 'active');
+    const blocker = getMissionActivationBlocker(mission, activeMission, timeOfDay);
+    if (blocker) {
+      setMissionFeedback(blocker);
+      return blocker;
+    }
+
+    resolvingMissionIdsRef.current.delete(missionId);
+    setMissionFeedback(null);
+    const acceptedMission = acceptMission(mission, Date.now());
+    setDynamicMissions((previous) => previous.map((item) => item.id === missionId ? acceptedMission : item));
+    setCharacterStats((stats) => ({
+      ...stats,
+      wantedLevel: getWantedLevelAfterMissionAccept(acceptedMission, stats.wantedLevel || 0),
+    }));
+    return null;
   };
 
-  const handleCompleteDynamicMission = (missionId: string) => {
-    setDynamicMissions((prev) =>
-      prev.map((m) => {
-        if (m.id === missionId && m.status !== 'completed') {
-          handleScoreIncrement(m.rewardXp);
-          setCharacterStats((st) => {
-            const newWanted = Math.max(
-              0,
-              Math.min(5, (st.wantedLevel || 0) + (m.wantedLevelChange || 0))
-            );
-            return {
-              ...st,
-              cash: st.cash + m.rewardCash,
-              respect: Math.min(100, st.respect + m.rewardRespect),
-              wantedLevel: newWanted,
-            };
-          });
+  const handleCompleteDynamicMission = (missionId: string, missionOverride?: DynamicMission) => {
+    if (resolvingMissionIdsRef.current.has(missionId)) return;
+    const mission = missionOverride?.id === missionId && missionOverride.status === 'active'
+      ? missionOverride
+      : dynamicMissions.find((item) => item.id === missionId && item.status === 'active');
+    if (!mission) return;
 
-          // If turf war, capture zone for Konglomerat and play triumphant fanfare
-          if (m.type === 'turf_war' && m.turfZoneId) {
-            setTurfZones((tzs) =>
-              tzs.map((tz) =>
-                tz.id === m.turfZoneId
-                  ? {
-                      ...tz,
-                      controllingGang: 'Y!App Konglomerat',
-                      controlPercentage: 100,
-                      isContested: false,
-                    }
-                  : tz
-              )
-            );
-            audioDsp.playTurfWarVictory();
-          }
+    const checkpointBlocker = getMissionCheckpointBlocker(mission);
+    if (checkpointBlocker) {
+      setMissionFeedback(checkpointBlocker);
+      return;
+    }
 
-          // If rewarded gear, add to inventory
-          if (m.rewardGearName) {
-            setInventory((inv) => [
-              ...inv,
-              {
-                itemId: `gear_${Date.now()}`,
-                name: m.rewardGearName!,
-                quantity: 1,
-                icon: '🎁',
-                category: 'gear',
-                sellPrice: 1500,
-              },
-            ]);
-          }
+    const checkpointUpdate = advanceMissionCheckpoint(mission);
+    if (checkpointUpdate) {
+      setDynamicMissions((current) => current.map((item) => item.id === missionId && item.status === 'active'
+        ? checkpointUpdate
+        : item
+      ));
+      setMissionFeedback(mission.checkpoints?.[checkpointUpdate.checkpointIndex ?? 0]?.label ?? 'Novi cilj je označen na radaru.');
+      return;
+    }
 
-          return { ...m, status: 'completed' };
-        }
-        return m;
-      })
-    );
+    const escapeComplete = mission.type === 'escape_police' &&
+      (!mission.requiresPackagePickup || Boolean(mission.progress?.packagePickedUp));
+    const blocker = getMissionCompletionBlocker(mission, {
+      now: Date.now(),
+      timeOfDay,
+      wantedLevel: escapeComplete ? 0 : characterStats.wantedLevel || 0,
+    });
+    if (blocker) {
+      setMissionFeedback(blocker);
+      return;
+    }
+
+    resolvingMissionIdsRef.current.add(missionId);
+    setMissionFeedback(null);
+    setDynamicMissions((current) => current.map((item) => item.id === missionId && item.status === 'active'
+      ? { ...item, status: 'completed', failureReason: undefined }
+      : item
+    ));
+    // Mission XP is already accompanied by its explicit cash/respect reward; do not award XP-derived cash twice.
+    handleScoreIncrement(mission.rewardXp, 0, 0);
+    setCharacterStats((stats) => ({
+      ...stats,
+      cash: stats.cash + mission.rewardCash,
+      respect: Math.min(100, stats.respect + mission.rewardRespect),
+      wantedLevel: mission.type === 'escape_police'
+        ? 0
+        : Math.max(0, Math.min(5, (stats.wantedLevel || 0) + (mission.wantedLevelChange || 0))),
+    }));
+
+    if (mission.type === 'turf_war' && mission.turfZoneId) {
+      setTurfZones((zones) => zones.map((zone) => zone.id === mission.turfZoneId
+        ? { ...zone, controllingGang: 'Y!App Konglomerat', controlPercentage: 100, isContested: false }
+        : zone
+      ));
+      audioDsp.playTurfWarVictory();
+    }
+
+    if (mission.rewardGearName) {
+      setInventory((items) => items.some((item) => item.name === mission.rewardGearName)
+        ? items
+        : [...items, {
+            itemId: `gear_${mission.id}`,
+            name: mission.rewardGearName!,
+            quantity: 1,
+            icon: '🎁',
+            category: 'gear',
+            sellPrice: 1500,
+          }]
+      );
+    }
+  };
+
+  const handleAbandonMission = (missionId: string) => {
+    resolvingMissionIdsRef.current.delete(missionId);
+    setDynamicMissions((current) => current.map((mission) => mission.id === missionId && mission.status === 'active'
+      ? { ...mission, status: 'failed', failureReason: 'Zadatak je napušten.' }
+      : mission
+    ));
+    setMissionFeedback('Zadatak je napušten. Možeš ga kasnije ponovo prihvatiti.');
   };
 
   const handleGenerateNewMission = () => {
-    const newMission = DynamicMissionEngine.generateProceduralMission(dynamicMissions.length);
+    const newMission = DynamicMissionEngine.generateProceduralMission(Date.now());
     setDynamicMissions((prev) => [newMission, ...prev]);
   };
 
   // Street Market Trading Handlers
   const handleBuyItem = (item: MarketItem, quantity: number, price: number) => {
-    if (characterStats.cash < price) return;
+    if (!isWithinMarketZone(playerPos, 'buy')) {
+      setMarketFeedback('Kupovina je dostupna samo kod Buvljaka kod Pruge. Priđi tezgi na najviše 7 m.');
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
+      setMarketFeedback('Količina ili cena kupovine nije ispravna.');
+      return;
+    }
+    if (characterStats.cash < price) {
+      setMarketFeedback('Nemaš dovoljno keša za ovu kupovinu.');
+      return;
+    }
 
+    const activeTradeMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'trade_flip');
+    const wrongTradeItem = activeTradeMission?.requiredTradeItemId && activeTradeMission.requiredTradeItemId !== item.id;
+    setMarketFeedback(wrongTradeItem
+      ? `Kupovina je završena, ali ugovor traži ${activeTradeMission.requiredTradeItemName ?? 'drugi artikal'}.`
+      : null);
     setCharacterStats((st) => ({ ...st, cash: st.cash - price }));
     setInventory((inv) => {
       const existing = inv.find((i) => i.itemId === item.id);
@@ -407,9 +613,38 @@ export function App() {
         },
       ];
     });
+    if (activeTradeMission) {
+      let updatedMission = recordTradePurchase(activeTradeMission, { id: item.id, name: item.name }, quantity);
+      if (
+        updatedMission !== activeTradeMission &&
+        (activeTradeMission.checkpointIndex ?? 0) === 0 &&
+        updatedMission.progress?.tradeItemId === item.id &&
+        updatedMission.progress.tradeStarted
+      ) {
+        updatedMission = advanceMissionCheckpoint(updatedMission) ?? updatedMission;
+        setMissionFeedback(updatedMission.checkpoints?.[updatedMission.checkpointIndex ?? 0]?.label ?? 'Teret je evidentiran; sledeći cilj je označen.');
+      }
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.id === activeTradeMission.id && mission.status === 'active' ? updatedMission : mission
+      ));
+    }
   };
 
   const handleSellItem = (invItem: InventoryItem, quantity: number, price: number) => {
+    if (!isWithinMarketZone(playerPos, 'sell')) {
+      setMarketFeedback('Prodaja je dostupna samo na Tabačkoj Čaršiji. Priđi označenom mestu na najviše 7 m.');
+      return;
+    }
+    const currentHolding = inventory.find((item) => item.itemId === invItem.itemId)?.quantity ?? 0;
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > currentHolding || !Number.isFinite(price) || price < 0) {
+      setMarketFeedback('Količina ili cena prodaje nije ispravna.');
+      return;
+    }
+    const activeTradeMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'trade_flip');
+    const wrongTradeItem = activeTradeMission && activeTradeMission.progress?.tradeItemId !== invItem.itemId;
+    setMarketFeedback(wrongTradeItem
+      ? `Prodaja je završena, ali ova roba nije teret aktivnog ugovora${activeTradeMission.requiredTradeItemName ? ` (${activeTradeMission.requiredTradeItemName})` : ''}.`
+      : null);
     const totalCash = price * quantity;
     setCharacterStats((st) => ({ ...st, cash: st.cash + totalCash }));
 
@@ -423,6 +658,16 @@ export function App() {
         })
         .filter((i) => i.quantity > 0);
     });
+    if (activeTradeMission) {
+      const updatedMission = recordTradeSale(activeTradeMission, invItem.itemId, quantity);
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.id === activeTradeMission.id && mission.status === 'active' ? updatedMission : mission
+      ));
+      if (updatedMission.progress?.tradeCompleted &&
+          Math.hypot(playerPos.x - updatedMission.targetCoords.x, playerPos.z - updatedMission.targetCoords.z) < 3.2) {
+        handleCompleteDynamicMission(updatedMission.id, updatedMission);
+      }
+    }
   };
 
   // Botanical Farming Handlers
@@ -504,6 +749,22 @@ export function App() {
         return p;
       })
     );
+
+    if (plot.id === 'plot_3' && Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) <= 7) {
+      const activeHarvestMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'plant_harvest');
+      if (activeHarvestMission) {
+        const harvestedMission = { ...activeHarvestMission, progress: { ...activeHarvestMission.progress, harvested: true } };
+        const advancedMission = (harvestedMission.checkpointIndex ?? 0) === 0
+          ? advanceMissionCheckpoint(harvestedMission) ?? harvestedMission
+          : harvestedMission;
+        setDynamicMissions((missions) => missions.map((mission) =>
+          mission.id === activeHarvestMission.id && mission.status === 'active' ? advancedMission : mission
+        ));
+        if (advancedMission !== harvestedMission) {
+          setMissionFeedback(advancedMission.checkpoints?.[advancedMission.checkpointIndex ?? 0]?.label ?? 'Berba je evidentirana; sledeći cilj je označen.');
+        }
+      }
+    }
   };
 
   // Compile save data for Google Drive persistence
@@ -528,6 +789,7 @@ export function App() {
       humidity: 58.2,
       bpm: 145,
     },
+    gameProgress,
   };
 
   const handleLoadSaveData = (data: GameSaveData) => {
@@ -536,6 +798,15 @@ export function App() {
     if (data.score !== undefined) setScore(data.score);
     if (data.energyLevel !== undefined) setEnergyLevel(data.energyLevel);
     if (data.cubeRotation) setCubeRotation(data.cubeRotation);
+    if (isGameProgressData(data.gameProgress)) {
+      const saved = data.gameProgress;
+      setCharacterStats(saved.characterStats);
+      setQuests(saved.quests);
+      setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
+      setTurfZones(reconcileTurfZones(saved.turfZones));
+      setPlantPlots(saved.plantPlots);
+      setInventory(saved.inventory);
+    }
     if (data.vaultEntities && Array.isArray(data.vaultEntities)) {
       setVaultEntities(
         data.vaultEntities.map((e: any) => ({
@@ -551,34 +822,50 @@ export function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
+      {progressHydrated && (
+        <div aria-live="polite" className="fixed bottom-2 right-2 z-40 rounded-md border border-emerald-400/30 bg-slate-950/85 px-2 py-1 font-mono text-[9px] text-emerald-200">
+          LOCAL SAVE: {localProgressStatus === 'saved' ? 'SAČUVANO' : localProgressStatus === 'error' ? 'NEDOSTUPAN' : 'ČUVANJE…'}
+          {currentUser && <> · CLOUD: {cloudProgressStatus === 'saving' ? 'SNIMANJE…' : cloudProgressStatus === 'saved' ? 'SAČUVANO' : cloudProgressStatus === 'error' ? 'GREŠKA' : 'ČEKA'}</>}
+        </div>
+      )}
       {/* 3D Scene Viewport: Satelitska Mapa Požarevca, AI Saobraćaj, Zgrade, Dinamičko Vreme & GTA Lik */}
-      <ThreeCanvas
-        cubeColor={cubeColor}
-        sphereColor={sphereColor}
-        cubeWireframe={cubeWireframe}
-        onCubeRotated={(rot) => setCubeRotation(rot)}
-        onScoreIncrement={handleScoreIncrement}
-        autoSpinCube={autoSpinCube}
-        cameraMode={cameraMode}
-        bloomEnabled={bloomEnabled}
-        bloomStrength={bloomStrength}
-        weather={weather}
-        onWeatherChange={setWeather}
-        characterStats={characterStats}
-        onUpdateCharacterPosition={setPlayerPos}
-        onCompleteQuest={handleCompleteQuest}
-        quests={quests}
-        dynamicMissions={dynamicMissions}
-        onCompleteDynamicMission={handleCompleteDynamicMission}
-        plantPlots={plantPlots}
-        onInteractWithPoi={handleInteractWithPoi}
-        onNearPoiChange={setNearPoi}
-        nearPoi={nearPoi}
-        outfit={outfit}
-        customConfig={customConfig}
-        isCctvActive={isCctvActive}
-        cctvSystem={cctvSystemRef.current}
-      />
+      {hasEnteredGame && (
+        <React.Suspense
+          fallback={(
+            <div className="absolute inset-0 z-40 grid place-items-center bg-slate-950 text-cyan-300 font-mono text-sm">
+              Učitavanje 3D sveta Požarevca…
+            </div>
+          )}
+        >
+          <ThreeCanvas
+            cubeColor={cubeColor}
+            sphereColor={sphereColor}
+            cubeWireframe={cubeWireframe}
+            onCubeRotated={(rot) => setCubeRotation(rot)}
+            onScoreIncrement={handleScoreIncrement}
+            autoSpinCube={autoSpinCube}
+            cameraMode={cameraMode}
+            bloomEnabled={bloomEnabled}
+            bloomStrength={bloomStrength}
+            weather={weather}
+            onWeatherChange={setWeather}
+            characterStats={characterStats}
+            onUpdateCharacterPosition={setPlayerPos}
+            onCompleteQuest={handleCompleteQuest}
+            quests={quests}
+            dynamicMissions={dynamicMissions}
+            onCompleteDynamicMission={handleCompleteDynamicMission}
+            plantPlots={plantPlots}
+            onInteractWithPoi={handleInteractWithPoi}
+            onNearPoiChange={setNearPoi}
+            nearPoi={nearPoi}
+            outfit={outfit}
+            customConfig={customConfig}
+            isCctvActive={isCctvActive}
+            cctvSystem={cctvSystemRef.current}
+          />
+        </React.Suspense>
+      )}
 
       {/* GTA Požarevac Odvojeni Modularni Prozori: Lik & Garderoba, Kamera, Radar, Misije, Telefon & Buvljak */}
       <GtaPožarevacHud
@@ -646,32 +933,43 @@ export function App() {
         vaultStats={vaultStats}
       />
 
+      <React.Suspense fallback={null}>
       {/* Google Drive Persistence Modal */}
+      {isDriveOpen && (
       <DriveSyncModal
         isOpen={isDriveOpen}
         onClose={() => setIsDriveOpen(false)}
         currentUser={currentUser}
-        onUserChanged={(u) => setCurrentUser(u)}
+        onUserChanged={(user) => {
+          setCurrentUser(user);
+          setProgressHydrated(!user);
+        }}
         currentSaveData={currentSaveData}
         onLoadSaveData={handleLoadSaveData}
       />
+      )}
 
       {/* Multi-turn Chatbot (Search, Maps & POI Quest Dialogue) Drawer */}
+      {isChatOpen && (
       <AiChatDrawer
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
         activePoiDialogue={activePoiDialogue}
       />
+      )}
 
       {/* Y!App Graveyard & Genetic Vault Inspector Modal */}
+      {isVaultOpen && (
       <GraveyardVaultModal
         isOpen={isVaultOpen}
         onClose={() => setIsVaultOpen(false)}
         entities={vaultEntities}
         onUpdateEntities={setVaultEntities}
       />
+      )}
 
       {/* Veo 3 Video Studio Modal */}
+      {isVeoOpen && (
       <VeoStudioModal
         isOpen={isVeoOpen}
         onClose={() => setIsVeoOpen(false)}
@@ -680,16 +978,23 @@ export function App() {
           setIsIntroOpen(true);
         }}
       />
+      )}
 
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
+      {isIntroOpen && (
       <GameIntroVideoModal
         isOpen={isIntroOpen}
-        onClose={() => setIsIntroOpen(false)}
+        onClose={() => {
+          setHasEnteredGame(true);
+          setIsIntroOpen(false);
+        }}
         introVideoUrl={introVideoUrl}
         onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
       />
+      )}
 
       {/* 3D Character Creator & Customizer Modal (Kreiraj Lika) */}
+      {isCreatorOpen && (
       <CharacterCreatorModal
         isOpen={isCreatorOpen}
         onClose={() => setIsCreatorOpen(false)}
@@ -698,30 +1003,41 @@ export function App() {
         onSelectPresetOutfit={setOutfit}
         onFocusCloseUpCamera={() => setCameraMode('closeUp')}
       />
+      )}
 
       {/* Bratina Phone OS Modal: SMS Inbox & Dnevne Misije */}
+      {isPhoneOpen && (
       <BratinaPhoneModal
         isOpen={isPhoneOpen}
         onClose={() => setIsPhoneOpen(false)}
         missions={dynamicMissions}
         onActivateMission={handleActivateMission}
+        onAbandonMission={handleAbandonMission}
+        missionFeedback={missionFeedback}
         onGenerateNewMission={handleGenerateNewMission}
         timeOfDay={timeOfDay}
         wantedLevel={characterStats.wantedLevel || 0}
       />
+      )}
 
       {/* Ulični Buvljak & Trgovina Robom (Buy/Sell) Modal */}
+      {isMarketOpen && (
       <StreetMarketModal
         isOpen={isMarketOpen}
         onClose={() => setIsMarketOpen(false)}
         playerCash={characterStats.cash}
         inventory={inventory}
         timeOfDay={timeOfDay}
+        canBuyHere={isWithinMarketZone(playerPos, 'buy')}
+        canSellHere={isWithinMarketZone(playerPos, 'sell')}
+        marketFeedback={marketFeedback}
         onBuyItem={handleBuyItem}
         onSellItem={handleSellItem}
       />
+      )}
 
       {/* Botanička Plantaža & Žetva (Sadnja semena & Zalivanje) Modal */}
+      {isFarmOpen && (
       <BotanicalFarmModal
         isOpen={isFarmOpen}
         onClose={() => setIsFarmOpen(false)}
@@ -731,8 +1047,10 @@ export function App() {
         onWaterPlot={handleWaterPlot}
         onHarvestPlot={handleHarvestPlot}
       />
+      )}
 
       {/* Rat za Reone: Požarevac Underground Modal */}
+      {isTurfWarOpen && (
       <TurfWarModal
         isOpen={isTurfWarOpen}
         onClose={() => setIsTurfWarOpen(false)}
@@ -743,7 +1061,7 @@ export function App() {
         onStartTurfMission={(zone) => {
           // Find or create turf war mission for this zone
           const matching = dynamicMissions.find(
-            (m) => m.turfZoneId === zone.id || m.targetCoords.x === zone.centerCoords.x
+            (m) => m.type === 'turf_war' && (m.turfZoneId === zone.id || (m.targetCoords.x === zone.centerCoords.x && m.targetCoords.z === zone.centerCoords.z))
           );
           if (matching) {
             handleActivateMission(matching.id);
@@ -751,17 +1069,34 @@ export function App() {
             const newTurfMission = DynamicMissionEngine.generateProceduralMission(Date.now());
             newTurfMission.type = 'turf_war';
             newTurfMission.title = `Rat za Reon: ${zone.name} ⚔️`;
+            newTurfMission.description = `Obezbedi prilaz reonu, odbrani kontrolnu tačku i preuzmi ${zone.name} za svoju ekipu.`;
             newTurfMission.turfZoneId = zone.id;
+            newTurfMission.requiredTimeOfDay = 'any';
+            newTurfMission.timeLimitSeconds = undefined;
+            newTurfMission.wantedLevelChange = 0;
             newTurfMission.targetCoords = zone.centerCoords;
-            newTurfMission.status = 'active';
-            setDynamicMissions((prev) => [newTurfMission, ...prev]);
+            newTurfMission.checkpoints = [
+              { label: `Obezbedi prilaz: ${zone.name}`, x: zone.centerCoords.x, z: zone.centerCoords.z },
+              { label: 'Odbrani kontrolnu tačku', x: zone.centerCoords.x + 2.5, z: zone.centerCoords.z + 2.5 },
+            ];
+            const activeMission = dynamicMissions.find((mission) => mission.status === 'active');
+            const blocker = getMissionActivationBlocker(newTurfMission, activeMission, timeOfDay);
+            if (blocker) {
+              setMissionFeedback(blocker);
+              return;
+            }
+            newTurfMission.status = 'available';
+            setDynamicMissions((prev) => [acceptMission(newTurfMission, Date.now()), ...prev]);
+            setMissionFeedback(null);
           }
         }}
         playerCash={characterStats.cash}
         playerRespect={characterStats.respect}
       />
+      )}
 
       {/* Google Docs Izveštaj & Hronika Modal */}
+      {isDocsOpen && (
       <GoogleDocsModal
         isOpen={isDocsOpen}
         onClose={() => setIsDocsOpen(false)}
@@ -769,8 +1104,10 @@ export function App() {
         turfZones={turfZones}
         userEmail={currentUser?.email}
       />
+      )}
 
       {/* Google Maps GPS Požarevac Satelit & Znamenitosti Modal */}
+      {isMapsOpen && (
       <GoogleMapsModal
         isOpen={isMapsOpen}
         onClose={() => setIsMapsOpen(false)}
@@ -779,8 +1116,10 @@ export function App() {
           setPlayerPos({ x: poi.coords.x, z: poi.coords.z, heading: playerPos.heading });
         }}
       />
+      )}
 
       {/* Google Picker v10.0 Modal */}
+      {isPickerOpen && (
       <GooglePickerModal
         isOpen={isPickerOpen}
         onClose={() => setIsPickerOpen(false)}
@@ -788,12 +1127,17 @@ export function App() {
           console.log('[Google Picker File Selected]', file);
         }}
       />
+      )}
 
       {/* XP Master Codex v10.0 Modal (10 Master Algoritama) */}
+      {isMasterPlanOpen && (
       <MasterPlanModal
         isOpen={isMasterPlanOpen}
         onClose={() => setIsMasterPlanOpen(false)}
       />
+      )}
+
+      </React.Suspense>
 
       {/* CCTV Hacker Surveillance Overlay */}
       <CctvOverlay

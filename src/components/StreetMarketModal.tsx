@@ -27,6 +27,9 @@ export interface StreetMarketModalProps {
   playerCash: number;
   inventory: InventoryItem[];
   timeOfDay: TimeOfDay;
+  canBuyHere: boolean;
+  canSellHere: boolean;
+  marketFeedback?: string | null;
   onBuyItem: (item: MarketItem, quantity: number, price: number) => void;
   onSellItem: (invItem: InventoryItem, quantity: number, price: number) => void;
 }
@@ -37,6 +40,9 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
   playerCash,
   inventory,
   timeOfDay,
+  canBuyHere,
+  canSellHere,
+  marketFeedback,
   onBuyItem,
   onSellItem,
 }) => {
@@ -113,6 +119,20 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
               ☀️ DNEVNI BAZAR: STABILNE CENE SEMENA & OPREME
             </span>
           )}
+        </div>
+
+        <div role="status" className={`mb-3 rounded-xl border px-3 py-2 text-[10px] font-bold ${
+          (activeTab === 'market' ? canBuyHere : canSellHere)
+            ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-200'
+            : 'border-amber-500/30 bg-amber-950/30 text-amber-200'
+        }`}>
+          {marketFeedback || (activeTab === 'market'
+            ? canBuyHere
+              ? 'LOKACIJA POTVRĐENA: Buvljak kod Pruge — kupovina je omogućena.'
+              : 'KUPOVINA ZAKLJUČANA: priđi Buvljaku kod Pruge (oznaka na radaru) na najviše 7 m.'
+            : canSellHere
+              ? 'LOKACIJA POTVRĐENA: Tabačka Čaršija — prodaja je omogućena.'
+              : 'PRODAJA ZAKLJUČANA: priđi Tabačkoj Čaršiji (oznaka na radaru) na najviše 7 m.')}
         </div>
 
         {/* Navigation Tabs (Kupi na Pijaci vs Tvoj Ranac) */}
@@ -205,13 +225,13 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
                     </div>
 
                     <button
-                      disabled={!canAfford}
+                      disabled={!canAfford || !canBuyHere}
                       onClick={() => {
                         onBuyItem(item, 1, buy);
                         audioDsp.playThugCoinSound();
                       }}
                       className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
-                        canAfford
+                        canAfford && canBuyHere
                           ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 shadow-md'
                           : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                       }`}
@@ -257,21 +277,23 @@ export const StreetMarketModal: React.FC<StreetMarketModalProps> = ({
                     </div>
 
                     <button
+                      disabled={!canSellHere}
                       onClick={() => {
                         onSellItem(inv, 1, sellPrice);
                         audioDsp.playThugCoinSound();
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition cursor-pointer"
+                      className={`px-3 py-1.5 rounded-xl font-black text-xs transition ${canSellHere ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
                     >
                       PRODAJ 1
                     </button>
                     {inv.quantity > 1 && (
                       <button
+                        disabled={!canSellHere}
                         onClick={() => {
                           onSellItem(inv, inv.quantity, sellPrice);
                           audioDsp.playThugCoinSound();
                         }}
-                        className="px-2 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition cursor-pointer"
+                        className={`px-2 py-1.5 rounded-xl font-bold text-[10px] transition ${canSellHere ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
                       >
                         SVE ({inv.quantity})
                       </button>

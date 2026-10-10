@@ -21,7 +21,8 @@ import { PoliceAndDogsSystem } from '../services/policeAndDogsSystem';
 import { DynamicMission } from '../services/dynamicMissionEngine';
 import { PlantPlot } from '../services/streetEconomy';
 import { CctvSystem } from '../services/cctvSystem';
-
+import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
+import { AdaptiveRenderBudget, getInitialPixelRatio } from '../services/rendererPerformance';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -90,6 +91,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
+  const cameraDirectionRef = useRef(new THREE.Vector3());
+  const nextPositionNotifyRef = useRef(0);
+  const bloomEnabledRef = useRef(bloomEnabled);
+  bloomEnabledRef.current = bloomEnabled;
+  const autoSpinCubeRef = useRef(autoSpinCube);
+  autoSpinCubeRef.current = autoSpinCube;
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -128,15 +135,22 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const deviceMemory = 'deviceMemory' in navigator
+      ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
+      : undefined;
+    const renderBudget = new AdaptiveRenderBudget(
+      getInitialPixelRatio(window.devicePixelRatio, deviceMemory),
+    );
+    renderer.setPixelRatio(renderBudget.pixelRatio);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.88;
     container.appendChild(renderer.domElement);
 
     // 2. Post-Processing: EffectComposer & UnrealBloomPass
     const composer = new EffectComposer(renderer);
+    composer.setPixelRatio(renderBudget.pixelRatio);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
@@ -163,8 +177,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const sunLight = new THREE.DirectionalLight(0xfff7ed, 1.15);
     sunLight.position.set(28, 48, 25);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 180;
     sunLight.shadow.camera.left = -38;
@@ -238,7 +252,22 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 6. 3D URBAN BUILDINGS ALONG POŽAREVAC BLOCKS WITH NEON SIGNS
     const buildingsGroup = new THREE.Group();
     const buildingColors = [0x334155, 0x3f4e65, 0x475569, 0x2e3846, 0x52525b];
-    const windowMat = new THREE.MeshBasicMaterial({ color: 0xffea9f });
+    const windowGeo = new THREE.PlaneGeometry(0.62, 0.82);
+    const litWindowMat = new THREE.MeshStandardMaterial({
+      color: 0xffe7ad,
+      emissive: 0xffa726,
+      emissiveIntensity: 0.2,
+      roughness: 0.42,
+      metalness: 0.04,
+    });
+    const darkWindowMat = new THREE.MeshStandardMaterial({
+      color: 0x263445,
+      emissive: 0x050b14,
+      emissiveIntensity: 0.03,
+      roughness: 0.52,
+      metalness: 0.08,
+    });
+    const windowDummy = new THREE.Object3D();
 
     const createCityBuilding = (x: number, z: number, w: number, h: number, d: number, neonTitle?: string, neonColor?: number) => {
       const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
@@ -250,10 +279,46 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       building.receiveShadow = true;
       buildingsGroup.add(building);
 
-      const winGeo = new THREE.PlaneGeometry(w * 0.75, h * 0.65);
-      const win = new THREE.Mesh(winGeo, windowMat);
-      win.position.set(x, h * 0.55, z + d / 2 + 0.05);
-      buildingsGroup.add(win);
+      const columns = Math.max(2, Math.floor(w / 1.25));
+      const rows = Math.max(3, Math.floor(h / 1.8));
+      const windowCount = columns * rows;
+      const litWindows = new THREE.InstancedMesh(windowGeo, litWindowMat, windowCount);
+      const darkWindows = new THREE.InstancedMesh(windowGeo, darkWindowMat, windowCount);
+      let litIndex = 0;
+      let darkIndex = 0;
+      const stableSeed = Math.abs(Math.round(x * 13 + z * 7));
+
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          windowDummy.position.set(
+            x - w / 2 + ((column + 1) * w) / (columns + 1),
+            1.1 + (row * (h - 2.2)) / Math.max(1, rows - 1),
+            z + d / 2 + 0.055
+          );
+          windowDummy.rotation.set(0, 0, 0);
+          windowDummy.scale.set(1, 1, 1);
+          windowDummy.updateMatrix();
+
+          // A deterministic occupancy pattern gives each facade a natural mix of lit and dark rooms.
+          if ((stableSeed + column * 5 + row * 3) % 10 < 4) {
+            litWindows.setMatrixAt(litIndex, windowDummy.matrix);
+            litIndex += 1;
+          } else {
+            darkWindows.setMatrixAt(darkIndex, windowDummy.matrix);
+            darkIndex += 1;
+          }
+        }
+      }
+
+      litWindows.count = litIndex;
+      darkWindows.count = darkIndex;
+      litWindows.instanceMatrix.needsUpdate = true;
+      darkWindows.instanceMatrix.needsUpdate = true;
+      litWindows.castShadow = false;
+      darkWindows.castShadow = false;
+      litWindows.receiveShadow = false;
+      darkWindows.receiveShadow = false;
+      buildingsGroup.add(litWindows, darkWindows);
 
       if (neonTitle) {
         const signCanvas = document.createElement('canvas');
@@ -512,6 +577,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 13. DYNAMIC MISSION BEACONS (Flashing holographic beacons for dynamic missions)
     const missionBeaconsGroup = new THREE.Group();
     scene.add(missionBeaconsGroup);
+    const missionProximityLatch = new Set<string>();
 
     // 14. BUILD 3D THUG CHARACTER ("Mali Bandit")
     const characterRig = buildThugCharacter(outfit);
@@ -633,20 +699,26 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      composer.setPixelRatio(renderBudget.pixelRatio);
       composer.setSize(w, h);
-      if (bloomPassRef.current) bloomPassRef.current.resolution.set(w, h);
     };
     window.addEventListener('resize', onResize);
 
     // 19. ANIMATION LOOP (Precision performance.now timer without deprecation warnings)
     let lastTime = performance.now();
     let startTime = performance.now();
+    let lastRenderedTime = startTime;
     let animationFrameId: number;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
       const currentTime = performance.now();
+      if (document.visibilityState === 'hidden') {
+        lastTime = currentTime;
+        lastRenderedTime = currentTime;
+        return;
+      }
       const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
       const elapsedTime = (currentTime - startTime) / 1000;
@@ -700,7 +772,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       });
 
       // 3D Spatial Audio Listener tracking (PannerNode coordinates relative to camera)
-      const cameraDir = new THREE.Vector3();
+      const cameraDir = cameraDirectionRef.current;
       camera.getWorldDirection(cameraDir);
       audioDsp.updateAudioListener(
         camera.position.x,
@@ -733,7 +805,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       weatherMgr.update(delta, controller.position);
 
       // Notify parent about character coordinates for Požarevac GPS radar
-      if (onUpdateCharacterPosition && Math.floor(elapsedTime * 10) % 2 === 0) {
+      if (onUpdateCharacterPosition && elapsedTime >= nextPositionNotifyRef.current) {
+        nextPositionNotifyRef.current = elapsedTime + 0.1;
         onUpdateCharacterPosition({
           x: controller.position.x,
           z: controller.position.z,
@@ -768,30 +841,41 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       });
 
-      // Check dynamic missions proximity
+      // Trigger each checkpoint once on entry; remain latched until the player leaves its radius.
+      const activeMissionIds = new Set<string>();
       dynamicMissionsRef.current.forEach((dm) => {
-        if (dm.status === 'active') {
-          const distToDm = controller.position.distanceTo(
-            new THREE.Vector3(dm.targetCoords.x, 0, dm.targetCoords.z)
-          );
-          if (distToDm < 3.2) {
-            if (onCompleteDynamicMissionRef.current) {
-              onCompleteDynamicMissionRef.current(dm.id);
-            }
-            audioDsp.playHarvestChime();
-          }
+        if (dm.status !== 'active') return;
+        activeMissionIds.add(dm.id);
+        const distToDm = controller.position.distanceTo(
+          new THREE.Vector3(dm.targetCoords.x, 0, dm.targetCoords.z)
+        );
+        if (shouldTriggerMissionCheckpoint(missionProximityLatch, dm.id, distToDm, 3.2)) {
+          onCompleteDynamicMissionRef.current?.(dm.id);
+          audioDsp.playHarvestChime();
         }
+      });
+      missionProximityLatch.forEach((missionId) => {
+        if (!activeMissionIds.has(missionId)) missionProximityLatch.delete(missionId);
       });
 
       // Monument animations
       sphereMesh.position.y = 1.8 + Math.sin(elapsedTime * 2.2) * 0.25;
 
-      if (autoSpinCube) {
+      if (autoSpinCubeRef.current) {
         cubeMesh.rotation.y += 0.009;
         cubeMesh.rotation.x += 0.004;
       }
 
-      composer.render();
+      bloomPass.enabled = bloomEnabledRef.current;
+      if (bloomEnabledRef.current) composer.render();
+      else renderer.render(scene, camera);
+      const nextPixelRatio = renderBudget.sample(currentTime - lastRenderedTime);
+      lastRenderedTime = currentTime;
+      if (nextPixelRatio !== null) {
+        renderer.setPixelRatio(nextPixelRatio);
+        composer.setPixelRatio(nextPixelRatio);
+        composer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+      }
     };
 
     animate();

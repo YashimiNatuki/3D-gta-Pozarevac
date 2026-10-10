@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
 import { CITY_BUILDING_BOXES, SceneObstacleBox } from './weatherManager';
 import { PhysicsEngine } from './physicsEngine';
+import { SpatialHash2D } from './spatialHash';
 
 export interface DynamicCollider {
   x: number;
@@ -67,6 +68,8 @@ export class ThirdPersonController {
   // Collision System
   public getDynamicColliders: (() => DynamicCollider[]) | null = null;
   public staticObstacles: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
+  private staticObstacleHash = new SpatialHash2D<{ minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }>(8);
+  private dynamicObstacleHash = new SpatialHash2D<{ minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }>(8);
   public playerRadius = 0.45;
   private lastCollisionSoundTime = 0;
   public physicsEngine: PhysicsEngine;
@@ -135,6 +138,7 @@ export class ThirdPersonController {
       { minX: 3.8, maxX: 4.6, minZ: 1.1, maxZ: 2.9 },
       { minX: -9.9, maxX: -8.1, minZ: 4.6, maxZ: 5.4 },
     ];
+    this.staticObstacles.forEach((obstacle) => this.staticObstacleHash.insert({ ...obstacle, value: obstacle }));
 
     // Initialize Cannon.js rigid body physics engine
     this.physicsEngine = new PhysicsEngine(this.position);
@@ -308,22 +312,31 @@ export class ThirdPersonController {
     const deltaZ = this.velocity.z * dt;
 
     // Gather all active colliders (static buildings/props + dynamic vehicles)
-    const allColliders: { minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }[] = [
-      ...this.staticObstacles,
-    ];
-
+    this.dynamicObstacleHash.clear();
     if (this.getDynamicColliders) {
       const dynamics = this.getDynamicColliders();
       for (const d of dynamics) {
-        allColliders.push({
+        const collider = {
           minX: d.x - d.halfWidth,
           maxX: d.x + d.halfWidth,
           minZ: d.z - d.halfDepth,
           maxZ: d.z + d.halfDepth,
           isVehicle: d.type === 'vehicle',
-        });
+        };
+        this.dynamicObstacleHash.insert({ ...collider, value: collider });
       }
     }
+
+    const broadphaseBounds = {
+      minX: Math.min(this.position.x, this.position.x + deltaX) - this.playerRadius,
+      maxX: Math.max(this.position.x, this.position.x + deltaX) + this.playerRadius,
+      minZ: Math.min(this.position.z, this.position.z + deltaZ) - this.playerRadius,
+      maxZ: Math.max(this.position.z, this.position.z + deltaZ) + this.playerRadius,
+    };
+    const allColliders = [
+      ...this.staticObstacleHash.query(broadphaseBounds),
+      ...this.dynamicObstacleHash.query(broadphaseBounds),
+    ];
 
     // Step X with sliding collision resolution
     let newX = this.position.x + deltaX;

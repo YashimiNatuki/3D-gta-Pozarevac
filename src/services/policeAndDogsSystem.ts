@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
 import { geminiStoryEngine } from './geminiStoryEngine';
 import { audioLocalizationManager } from './audioLocalizationManager';
+import { SpatialHash2D } from './spatialHash';
+
+type PoliceAIState = 'patrol' | 'investigate' | 'intercept' | 'pursuit' | 'arrest';
+type DogAIState = 'idle' | 'sniffing' | 'barking' | 'chasing' | 'pack-alert';
+type AIContact = { kind: 'dog' | 'police' | 'pursuit'; index: number };
 
 export interface StreetDog {
   group: THREE.Group;
@@ -9,12 +14,14 @@ export interface StreetDog {
   legs: THREE.Mesh[];
   tail: THREE.Mesh;
   barkIndicator: THREE.Mesh;
-  state: 'idle' | 'sniffing' | 'barking' | 'chasing';
+  state: DogAIState;
   patrolCenter: THREE.Vector3;
   patrolRadius: number;
   speed: number;
   angle: number;
   lastBarkTime: number;
+  alertUntil: number;
+  targetMemory: THREE.Vector3;
 }
 
 export interface PoliceCar {
@@ -27,6 +34,11 @@ export interface PoliceCar {
   currentWaypoint: number;
   path: THREE.Vector3[];
   isPursuit?: boolean;
+  aiState: PoliceAIState;
+  suspicion: number;
+  lastKnownPlayer: THREE.Vector3;
+  searchUntil: number;
+  formationSlot: number;
 }
 
 export interface Pedestrian {
@@ -54,6 +66,8 @@ export class PoliceAndDogsSystem {
   private sirenFlashTimer: number = 0;
   private redActive: boolean = true;
   private lastSirenSoundTime: number = 0;
+  private readonly awarenessHash = new SpatialHash2D<AIContact>(8);
+  private readonly aiBounds = 0.65;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -168,6 +182,8 @@ export class PoliceAndDogsSystem {
         speed: 2.2,
         angle: Math.random() * Math.PI * 2,
         lastBarkTime: 0,
+        alertUntil: 0,
+        targetMemory: cfg.startPos.clone(),
       });
     });
   }
@@ -286,6 +302,11 @@ export class PoliceAndDogsSystem {
       currentWaypoint: 0,
       path: policePath,
       isPursuit: false,
+      aiState: 'patrol',
+      suspicion: 0,
+      lastKnownPlayer: policePath[0].clone(),
+      searchUntil: 0,
+      formationSlot: 0,
     });
   }
 
@@ -320,6 +341,11 @@ export class PoliceAndDogsSystem {
         currentWaypoint: 0,
         path: [],
         isPursuit: true,
+        aiState: 'pursuit',
+        suspicion: 1,
+        lastKnownPlayer: playerPos.clone(),
+        searchUntil: 0,
+        formationSlot: this.pursuitCruisers.length,
       });
     }
   }
@@ -468,8 +494,115 @@ export class PoliceAndDogsSystem {
     ped.bubbleTexture.needsUpdate = true;
   }
 
+  private rebuildAwarenessHash(): void {
+    this.awarenessHash.clear();
+    this.dogs.forEach((dog, index) => this.awarenessHash.insert({ minX: dog.group.position.x - this.aiBounds, maxX: dog.group.position.x + this.aiBounds, minZ: dog.group.position.z - this.aiBounds, maxZ: dog.group.position.z + this.aiBounds, value: { kind: 'dog', index } }));
+    this.policeCars.forEach((car, index) => this.awarenessHash.insert({ minX: car.group.position.x - 1.1, maxX: car.group.position.x + 1.1, minZ: car.group.position.z - 2, maxZ: car.group.position.z + 2, value: { kind: 'police', index } }));
+    this.pursuitCruisers.forEach((car, index) => this.awarenessHash.insert({ minX: car.group.position.x - 1.1, maxX: car.group.position.x + 1.1, minZ: car.group.position.z - 2, maxZ: car.group.position.z + 2, value: { kind: 'pursuit', index } }));
+  }
+
+  private nearbyContacts(position: THREE.Vector3, radius: number): AIContact[] {
+    return this.awarenessHash.query({ minX: position.x - radius, maxX: position.x + radius, minZ: position.z - radius, maxZ: position.z + radius });
+  }
+
+  private steerFromCrowd(position: THREE.Vector3, contacts: AIContact[], self: AIContact): THREE.Vector3 {
+    const separation = new THREE.Vector3();
+    contacts.forEach((contact) => {
+      if (contact.kind === self.kind && contact.index === self.index) return;
+      const other = contact.kind === 'dog' ? this.dogs[contact.index]?.group.position : contact.kind === 'police' ? this.policeCars[contact.index]?.group.position : this.pursuitCruisers[contact.index]?.group.position;
+      if (!other) return;
+      const dx = position.x - other.x;
+      const dz = position.z - other.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq > 0.01 && distanceSq < 16) {
+        const weight = 1 / distanceSq;
+        separation.x += dx * weight;
+        separation.z += dz * weight;
+      }
+    });
+    return separation;
+  }
+
+  private updateDogAI(dog: StreetDog, idx: number, delta: number, now: number, playerPos: THREE.Vector3, cameraPos: THREE.Vector3, wantedLevel: number): void {
+    const toPlayer = new THREE.Vector3().subVectors(playerPos, dog.group.position);
+    toPlayer.y = 0;
+    const playerDistance = toPlayer.length();
+    const nearby = this.nearbyContacts(dog.group.position, 7);
+    const policeNearby = nearby.some((contact) => contact.kind !== 'dog');
+    const threatRange = wantedLevel > 0 ? 7.5 : 4.2;
+    const canSeePlayer = playerDistance < threatRange;
+    if (canSeePlayer || (wantedLevel > 0 && policeNearby && playerDistance < 12)) dog.targetMemory.copy(playerPos);
+    if (canSeePlayer || (wantedLevel > 0 && policeNearby && playerDistance < 12)) {
+      dog.alertUntil = now + (wantedLevel > 0 ? 5000 : 2500);
+      dog.state = wantedLevel > 0 && policeNearby ? 'pack-alert' : playerDistance < 2 ? 'barking' : 'chasing';
+      dog.barkIndicator.visible = true;
+      if (now - dog.lastBarkTime > (dog.state === 'pack-alert' ? 2800 : 4000)) {
+        dog.lastBarkTime = now;
+        audioDsp.playThugCoinSound();
+        if (dog.state === 'pack-alert') geminiStoryEngine.triggerBanterShout('AV! Murija, igrač beži kroz reon!', { x: dog.group.position.x, y: 0.8, z: dog.group.position.z }, dog.name);
+      }
+    } else if (now < dog.alertUntil) {
+      dog.state = 'sniffing';
+      dog.barkIndicator.visible = false;
+    } else {
+      dog.state = 'idle';
+      dog.barkIndicator.visible = false;
+    }
+    dog.barkIndicator.lookAt(cameraPos);
+    if (dog.state === 'idle' || dog.state === 'sniffing') dog.angle += (dog.state === 'sniffing' ? 0.9 : 0.5) * delta;
+    const target = dog.state === 'chasing' || dog.state === 'barking' || dog.state === 'pack-alert' ? dog.targetMemory : new THREE.Vector3(dog.patrolCenter.x + Math.cos(dog.angle) * dog.patrolRadius, 0, dog.patrolCenter.z + Math.sin(dog.angle) * dog.patrolRadius);
+    const move = new THREE.Vector3().subVectors(target, dog.group.position);
+    move.y = 0;
+    move.addScaledVector(this.steerFromCrowd(dog.group.position, nearby, { kind: 'dog', index: idx }), 0.35);
+    if (move.length() > 0.35 && !(dog.state === 'barking' && playerDistance < 1.2)) {
+      move.normalize();
+      dog.group.position.addScaledVector(move, dog.speed * (dog.state === 'pack-alert' ? 1.45 : dog.state === 'chasing' ? 1.3 : 1) * delta);
+      dog.group.rotation.y = THREE.MathUtils.lerp(dog.group.rotation.y, Math.atan2(move.x, move.z), 0.16);
+    }
+    const legSwing = Math.sin(now * 0.012 + idx) * 0.35;
+    dog.legs[0].rotation.x = legSwing;
+    dog.legs[1].rotation.x = -legSwing;
+    dog.legs[2].rotation.x = -legSwing;
+    dog.legs[3].rotation.x = legSwing;
+    dog.tail.rotation.y = Math.sin(now * 0.02) * (dog.state === 'barking' ? 0.12 : 0.45);
+  }
+
+  private updatePoliceAI(car: PoliceCar, index: number, delta: number, now: number, playerPos: THREE.Vector3, wantedLevel: number, pursuit: boolean): void {
+    const toPlayer = new THREE.Vector3().subVectors(playerPos, car.group.position);
+    toPlayer.y = 0;
+    const distance = toPlayer.length();
+    const hasLineOfInterest = distance < (pursuit ? 36 : 20) && wantedLevel > 0;
+    if (hasLineOfInterest) {
+      car.lastKnownPlayer.copy(playerPos);
+      car.suspicion = Math.min(1, car.suspicion + delta * (pursuit ? 1.8 : 0.7));
+      car.searchUntil = now + (pursuit ? 2500 : 5000);
+    } else car.suspicion = Math.max(0, car.suspicion - delta * 0.12);
+    if (pursuit) car.aiState = distance < 4.5 ? 'arrest' : 'pursuit';
+    else if (car.suspicion > 0.55) car.aiState = distance < 9 ? 'intercept' : 'investigate';
+    else if (now < car.searchUntil) car.aiState = 'investigate';
+    else car.aiState = 'patrol';
+    const target = car.aiState === 'pursuit' || car.aiState === 'intercept' ? playerPos.clone() : car.aiState === 'investigate' ? car.lastKnownPlayer : car.path[(car.currentWaypoint + 1) % car.path.length];
+    if (pursuit && distance > 5) {
+      const flank = (car.formationSlot - 1) * 0.55;
+      target.x += Math.cos(flank) * 3.5;
+      target.z += Math.sin(flank) * 3.5;
+    }
+    const move = new THREE.Vector3().subVectors(target, car.group.position);
+    move.y = 0;
+    move.addScaledVector(this.steerFromCrowd(car.group.position, this.nearbyContacts(car.group.position, 8), { kind: pursuit ? 'pursuit' : 'police', index }), 0.22);
+    if (move.length() < (car.aiState === 'arrest' ? 3.2 : 0.8)) {
+      if (!pursuit) car.currentWaypoint = (car.currentWaypoint + 1) % car.path.length;
+    } else {
+      move.normalize();
+      const speed = pursuit ? car.speed : car.speed * (car.aiState === 'patrol' ? 1 : 1.25);
+      car.group.position.addScaledVector(move, speed * delta);
+      car.group.rotation.y = THREE.MathUtils.lerp(car.group.rotation.y, Math.atan2(move.x, move.z), pursuit ? 0.18 : 0.12);
+    }
+  }
+
   // --- 4. UPDATE LOOP ---
-  public update(delta: number, playerPos: THREE.Vector3, wantedLevel: number, cameraPos: THREE.Vector3) {
+  public update(rawDelta: number, playerPos: THREE.Vector3, wantedLevel: number, cameraPos: THREE.Vector3) {
+    const delta = Math.min(rawDelta, 0.05);
     const now = performance.now();
 
     // Sync active hot pursuit police cruisers based on wantedLevel
@@ -479,65 +612,29 @@ export class PoliceAndDogsSystem {
     if (wantedLevel >= 3 && now - this.lastSirenSoundTime > 8500) {
       // Find closest pursuit cruiser distance
       let minDist = 999;
+      let nearestPosX = 0;
+      let nearestPosY = 0;
+      let nearestPosZ = 0;
+      let hasNearestCruiser = false;
       this.pursuitCruisers.forEach((c) => {
         const d = c.group.position.distanceTo(playerPos);
-        if (d < minDist) minDist = d;
+        if (d < minDist) {
+          minDist = d;
+          nearestPosX = c.group.position.x;
+          nearestPosY = c.group.position.y;
+          nearestPosZ = c.group.position.z;
+          hasNearestCruiser = true;
+        }
       });
-      if (minDist < 35) {
+      if (minDist < 35 && hasNearestCruiser) {
         this.lastSirenSoundTime = now;
-        audioDsp.playPoliceSirenSound(minDist);
+        audioDsp.playPoliceSirenSound(nearestPosX, nearestPosY, nearestPosZ);
       }
     }
 
-    // 1. Update Dogs
-    this.dogs.forEach((dog, idx) => {
-      const distToPlayer = dog.group.position.distanceTo(playerPos);
-
-      // Make billboard face camera
-      dog.barkIndicator.lookAt(cameraPos);
-
-      if (distToPlayer < 4.2) {
-        // Player is nearby! Bark and approach or follow
-        dog.state = distToPlayer < 2.0 ? 'barking' : 'chasing';
-        dog.barkIndicator.visible = true;
-
-        if (now - dog.lastBarkTime > 4000) {
-          dog.lastBarkTime = now;
-          audioDsp.playThugCoinSound(); // Audio bark alert sound
-        }
-
-        // Rotate and move towards player smoothly
-        const dir = new THREE.Vector3().subVectors(playerPos, dog.group.position);
-        dir.y = 0;
-        if (dir.length() > 1.2) {
-          dir.normalize();
-          dog.group.position.addScaledVector(dir, dog.speed * 1.3 * delta);
-          dog.group.rotation.y = Math.atan2(dir.x, dir.z);
-        }
-      } else {
-        // Normal patrol within radius
-        dog.state = 'idle';
-        dog.barkIndicator.visible = false;
-        dog.angle += 0.5 * delta;
-        const targetX = dog.patrolCenter.x + Math.cos(dog.angle) * dog.patrolRadius;
-        const targetZ = dog.patrolCenter.z + Math.sin(dog.angle) * dog.patrolRadius;
-        const dir = new THREE.Vector3(targetX - dog.group.position.x, 0, targetZ - dog.group.position.z);
-        if (dir.length() > 0.3) {
-          dir.normalize();
-          dog.group.position.addScaledVector(dir, dog.speed * delta);
-          dog.group.rotation.y = THREE.MathUtils.lerp(dog.group.rotation.y, Math.atan2(dir.x, dir.z), 0.1);
-        }
-      }
-
-      // Animate dog legs and tail
-      const legSwing = Math.sin(now * 0.012 + idx) * 0.35;
-      dog.legs[0].rotation.x = legSwing;
-      dog.legs[1].rotation.x = -legSwing;
-      dog.legs[2].rotation.x = -legSwing;
-      dog.legs[3].rotation.x = legSwing;
-      dog.tail.rotation.y = Math.sin(now * 0.02) * 0.45;
-    });
-
+    // 1. Rebuild local awareness grid, then run dog perception/pack AI.
+    this.rebuildAwarenessHash();
+    this.dogs.forEach((dog, idx) => this.updateDogAI(dog, idx, delta, now, playerPos, cameraPos, wantedLevel));
     // 2. Update Flashing Sirens State
     this.sirenFlashTimer += delta;
     if (this.sirenFlashTimer > 0.16) {
@@ -545,77 +642,21 @@ export class PoliceAndDogsSystem {
       this.redActive = !this.redActive;
     }
 
-    // 2a. Update Patrol Police Cars
-    this.policeCars.forEach((pCar) => {
-      if (wantedLevel > 0) {
-        pCar.sirenRed.intensity = this.redActive ? 8.0 : 0;
-        pCar.sirenBlue.intensity = !this.redActive ? 8.0 : 0;
-        pCar.lightBarRedMesh.visible = this.redActive;
-        pCar.lightBarBlueMesh.visible = !this.redActive;
-      } else {
-        pCar.sirenRed.intensity = 0;
-        pCar.sirenBlue.intensity = 0;
-        pCar.lightBarRedMesh.visible = true;
-        pCar.lightBarBlueMesh.visible = true;
-      }
-
-      const effSpeed = wantedLevel > 0 ? pCar.speed * 1.4 : pCar.speed;
-      const targetWp = pCar.path[(pCar.currentWaypoint + 1) % pCar.path.length];
-      const dir = new THREE.Vector3().subVectors(targetWp, pCar.group.position);
-      dir.y = 0;
-
-      const distToPlayer = pCar.group.position.distanceTo(playerPos);
-      let speedMult = 1.0;
-      if (distToPlayer < 3.5 && wantedLevel === 0) {
-        speedMult = 0.2;
-      }
-
-      if (dir.length() < 0.8) {
-        pCar.currentWaypoint = (pCar.currentWaypoint + 1) % pCar.path.length;
-      } else {
-        dir.normalize();
-        pCar.group.position.addScaledVector(dir, effSpeed * speedMult * delta);
-        const targetRot = Math.atan2(dir.x, dir.z);
-        pCar.group.rotation.y = THREE.MathUtils.lerp(pCar.group.rotation.y, targetRot, 0.1);
-      }
+    // 2a/2b. Police finite-state AI: patrol, investigate, intercept, pursuit, arrest.
+    this.policeCars.forEach((pCar, index) => {
+      pCar.sirenRed.intensity = wantedLevel > 0 && this.redActive ? 8.0 : 0;
+      pCar.sirenBlue.intensity = wantedLevel > 0 && !this.redActive ? 8.0 : 0;
+      pCar.lightBarRedMesh.visible = wantedLevel === 0 || this.redActive;
+      pCar.lightBarBlueMesh.visible = wantedLevel === 0 || !this.redActive;
+      this.updatePoliceAI(pCar, index, delta, now, playerPos, wantedLevel, false);
     });
-
-    // 2b. Update Active Pursuit Cruisers (Following & Intercepting Player in Hot Pursuit!)
-    this.pursuitCruisers.forEach((pCruiser, cIdx) => {
-      // High intensity siren strobes
+    this.pursuitCruisers.forEach((pCruiser, index) => {
       pCruiser.sirenRed.intensity = this.redActive ? 12.0 : 0;
       pCruiser.sirenBlue.intensity = !this.redActive ? 12.0 : 0;
       pCruiser.lightBarRedMesh.visible = this.redActive;
       pCruiser.lightBarBlueMesh.visible = !this.redActive;
-
-      const toPlayer = new THREE.Vector3().subVectors(playerPos, pCruiser.group.position);
-      toPlayer.y = 0;
-      const dist = toPlayer.length();
-
-      // Flank player slightly based on cruiser index
-      const flankAngle = (cIdx - 1) * 0.45;
-      const targetPos = playerPos.clone();
-      if (dist > 5) {
-        targetPos.x += Math.cos(flankAngle) * 3;
-        targetPos.z += Math.sin(flankAngle) * 3;
-      }
-
-      const moveDir = new THREE.Vector3().subVectors(targetPos, pCruiser.group.position);
-      moveDir.y = 0;
-
-      if (dist > 3.2) {
-        // Full throttle chase!
-        moveDir.normalize();
-        pCruiser.group.position.addScaledVector(moveDir, pCruiser.speed * delta);
-        const targetRot = Math.atan2(moveDir.x, moveDir.z);
-        pCruiser.group.rotation.y = THREE.MathUtils.lerp(pCruiser.group.rotation.y, targetRot, 0.12);
-      } else {
-        // Encircle and block player escape
-        const targetRot = Math.atan2(toPlayer.x, toPlayer.z);
-        pCruiser.group.rotation.y = THREE.MathUtils.lerp(pCruiser.group.rotation.y, targetRot, 0.15);
-      }
+      this.updatePoliceAI(pCruiser, index, delta, now, playerPos, wantedLevel, true);
     });
-
     // 3. Update Pedestrians
     this.pedestrians.forEach((ped, pIdx) => {
       const target = ped.path[(ped.waypointIndex + 1) % ped.path.length];
