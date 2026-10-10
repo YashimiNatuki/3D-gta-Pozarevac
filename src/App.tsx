@@ -60,7 +60,7 @@ import {
   isSeedCompatibleWithDistrict,
 } from './services/streetEconomy';
 import { applyVehicleImpactConsequences } from './services/vehicleImpactConsequences';
-import { markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from './services/cinematicIntroService';
+import { captureIntroStorageSnapshot, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from './services/cinematicIntroService';
 
 const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
 const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer })));
@@ -85,6 +85,7 @@ const ThreeCanvas = React.lazy(() =>
 
 export function App() {
   const [initialGameProgress] = useState(() => readGameProgress());
+  const [introStorageAtLaunch] = useState(() => captureIntroStorageSnapshot());
   const [hasCloudGameSave, setHasCloudGameSave] = useState(false);
   const [progressHydrated, setProgressHydrated] = useState(false);
   const [localProgressStatus, setLocalProgressStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -296,6 +297,7 @@ export function App() {
     if (!progressHydrated) return;
     const shouldPlayOriginalIntro = shouldAutoPlayCinematicIntro(
       Boolean(initialGameProgress) || hasCloudGameSave,
+      introStorageAtLaunch,
     );
     setPrioritizeBundledIntro(shouldPlayOriginalIntro);
     if (shouldPlayOriginalIntro) {

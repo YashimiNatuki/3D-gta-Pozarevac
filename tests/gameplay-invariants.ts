@@ -50,7 +50,7 @@ import { isValidPozarevacDem, samplePozarevacTerrainGrade, samplePozarevacTerrai
 import { findApproachingVehicleThreat } from '../src/services/pedestrianPanic';
 import { applyVehicleImpactConsequences } from '../src/services/vehicleImpactConsequences';
 import { terrainPixelToSourceCoordinate } from '../src/services/terrainImagery';
-import { hasStoredGameSaveData, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from '../src/services/cinematicIntroService';
+import { captureIntroStorageSnapshot, hasStoredGameSaveData, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from '../src/services/cinematicIntroService';
 import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -430,6 +430,14 @@ introMemory.clear();
 introStorage.setItem('pozaravac_player_save', '{"cash":2500}');
 assert.equal(hasStoredGameSaveData(introStorage), true);
 assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), false, 'legacy save data should suppress the first-run intro');
+introMemory.clear();
+const launchStorageSnapshot = captureIntroStorageSnapshot(introStorage);
+introStorage.setItem(GAME_PROGRESS_STORAGE_KEY, '{"autoSavedBeforeIntroCheck":true}');
+assert.equal(
+  shouldAutoPlayCinematicIntro(false, launchStorageSnapshot),
+  true,
+  'a progress write after launch snapshot must not suppress the first-run intro',
+);
 
 const sampleProgress: GameProgressData = {
   score: 2400,

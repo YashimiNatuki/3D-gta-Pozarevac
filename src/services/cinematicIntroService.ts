@@ -11,6 +11,8 @@ const GAME_SAVE_STORAGE_KEYS = [
   'pozaravac_player_stats',
 ] as const;
 
+const INTRO_STORAGE_KEYS = [...GAME_SAVE_STORAGE_KEYS, CINEMATIC_INTRO_SEEN_STORAGE_KEY] as const;
+
 const getBrowserStorage = (): KeyValueStorage | null => {
   if (typeof window === 'undefined') return null;
   try {
@@ -19,6 +21,23 @@ const getBrowserStorage = (): KeyValueStorage | null => {
     return null;
   }
 };
+
+/** Captures launch-time storage before the app's first automatic progress write. */
+export function captureIntroStorageSnapshot(storage: KeyValueStorage | null = getBrowserStorage()): KeyValueStorage | null {
+  if (!storage) return null;
+  const values = new Map<string, string | null>();
+  for (const key of INTRO_STORAGE_KEYS) {
+    try {
+      values.set(key, storage.getItem(key));
+    } catch {
+      values.set(key, null);
+    }
+  }
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+  };
+}
 
 export function hasStoredGameSaveData(storage: KeyValueStorage | null = getBrowserStorage()): boolean {
   if (!storage) return false;
