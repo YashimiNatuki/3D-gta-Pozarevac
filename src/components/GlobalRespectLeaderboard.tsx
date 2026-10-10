@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { Trophy, Crown, Flame, Shield, MapPin, X, Award, ChevronRight } from 'lucide-react';
 import { leaderboardService, LeaderboardEntry } from '../services/leaderboardService';
 import { CharacterStats } from '../services/characterProgress';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 interface GlobalRespectLeaderboardProps {
   isOpen: boolean;
@@ -36,11 +37,24 @@ export const GlobalRespectLeaderboard: React.FC<GlobalRespectLeaderboardProps> =
     }
   }, [isOpen, characterStats]);
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'respect-leaderboard',
+  });
+
   if (!isOpen) return null;
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-mono select-none">
-      <div className="bg-slate-900 border-2 border-amber-500/60 rounded-3xl shadow-2xl max-w-md w-full text-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-mono select-none"
+    >
+      <div
+        {...containerProps}
+        className="bg-slate-900 border-2 border-amber-500/60 rounded-3xl shadow-2xl max-w-md w-full text-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 relative"
+      >
         {/* Header */}
         <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 px-5 py-3.5 border-b border-amber-500/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -54,12 +68,7 @@ export const GlobalRespectLeaderboard: React.FC<GlobalRespectLeaderboardProps> =
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="sm" />
         </div>
 
         {/* List Content */}

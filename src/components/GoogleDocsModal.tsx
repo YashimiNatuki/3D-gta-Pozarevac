@@ -13,6 +13,7 @@ import { createGoogleDocGameLog } from '../services/googleDocs';
 import { CharacterStats } from '../services/characterProgress';
 import { TurfZone } from '../services/dynamicMissionEngine';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface GoogleDocsModalProps {
   isOpen: boolean;
@@ -102,9 +103,22 @@ ${turfZones
     }
   };
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'google-docs',
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono">
-      <div className="relative w-full max-w-lg bg-slate-900 border-2 border-blue-500/60 rounded-3xl p-6 shadow-2xl text-slate-200">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono"
+    >
+      <div
+        {...containerProps}
+        className="relative w-full max-w-lg bg-slate-900 border-2 border-blue-500/60 rounded-3xl p-6 shadow-2xl text-slate-200"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -116,12 +130,7 @@ ${turfZones
               <p className="text-xs text-blue-300">Generiši ulični izveštaj Požarevca u Google Docs</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="md" />
         </div>
 
         {/* Status notification */}

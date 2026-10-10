@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface VeoStudioModalProps {
   isOpen: boolean;
@@ -147,11 +148,24 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({
     onClose();
   };
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose: handleClose,
+    modalId: 'veo-studio',
+  });
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-xl bg-slate-900 border border-cyan-500/40 rounded-2xl p-6 shadow-2xl text-slate-200 font-sans">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn"
+    >
+      <div
+        {...containerProps}
+        className="relative w-full max-w-xl bg-slate-900 border border-cyan-500/40 rounded-2xl p-6 shadow-2xl text-slate-200 font-sans"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -168,13 +182,7 @@ export const VeoStudioModal: React.FC<VeoStudioModalProps> = ({
               <p className="text-xs text-slate-400 font-mono">Text-to-Video & Image Animation Generator</p>
             </div>
           </div>
-
-          <button
-            onClick={handleClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <ModalCloseButton onClose={handleClose} size="md" />
         </div>
 
         {errorMsg && (

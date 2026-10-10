@@ -1,7 +1,97 @@
 import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
+import { TimeOfDay } from './streetEconomy';
 
 export type WeatherState = 'Clear' | 'Rain' | 'Cyber-Storm' | 'Cyber-Fog';
+
+export interface TimeOfDayVisualProfile {
+  name: TimeOfDay;
+  serbianName: string;
+  skyTopColor: number;
+  skyBottomColor: number;
+  ambientColor: number;
+  ambientIntensity: number;
+  hemiSkyColor: number;
+  hemiGroundColor: number;
+  sunColor: number;
+  sunIntensity: number;
+  sunPosition: [number, number, number];
+  fillColor: number;
+  fillIntensity: number;
+  fogColor: number;
+  fogDensity: number;
+}
+
+export const TIME_OF_DAY_PROFILES: Record<TimeOfDay, TimeOfDayVisualProfile> = {
+  dawn: {
+    name: 'dawn',
+    serbianName: 'Jutro (Zora u Požarevcu)',
+    skyTopColor: 0x9a3412,     // Warm morning amber
+    skyBottomColor: 0xfed7aa,  // Sunrise peach
+    ambientColor: 0xfbcfe8,    // Rosy dawn ambient
+    ambientIntensity: 0.58,
+    hemiSkyColor: 0xfde047,
+    hemiGroundColor: 0x78350f,
+    sunColor: 0xffedd5,        // Golden low angle morning sun
+    sunIntensity: 1.25,
+    sunPosition: [42, 18, 28],
+    fillColor: 0xbae6fd,
+    fillIntensity: 0.35,
+    fogColor: 0xfdba74,
+    fogDensity: 0.005,
+  },
+  day: {
+    name: 'day',
+    serbianName: 'Dan (Vedro Podne)',
+    skyTopColor: 0x1e3a8a,     // Vibrant azure sky
+    skyBottomColor: 0x93c5fd,  // Soft bright horizon
+    ambientColor: 0xf1f5f9,    // Crisp neutral daylight
+    ambientIntensity: 0.68,
+    hemiSkyColor: 0xbfdbfe,
+    hemiGroundColor: 0x334155,
+    sunColor: 0xffffff,        // Bright midday sun
+    sunIntensity: 1.35,
+    sunPosition: [28, 55, 25],
+    fillColor: 0x7dd3fc,
+    fillIntensity: 0.4,
+    fogColor: 0x94a3b8,
+    fogDensity: 0.0035,
+  },
+  dusk: {
+    name: 'dusk',
+    serbianName: 'Sumrak (Zalazak nad Moravom)',
+    skyTopColor: 0x4c1d95,     // Deep violet twilight
+    skyBottomColor: 0xf43f5e,  // Burning crimson rose
+    ambientColor: 0xc084fc,    // Neon purple ambient glow
+    ambientIntensity: 0.52,
+    hemiSkyColor: 0xf43f5e,
+    hemiGroundColor: 0x1e1b4b,
+    sunColor: 0xf97316,        // Fiery low sunset
+    sunIntensity: 1.15,
+    sunPosition: [-42, 14, -20],
+    fillColor: 0xa855f7,
+    fillIntensity: 0.35,
+    fogColor: 0x701a75,
+    fogDensity: 0.006,
+  },
+  night: {
+    name: 'night',
+    serbianName: 'Noć (Cyber Ponoć)',
+    skyTopColor: 0x020617,     // Deep pitch midnight
+    skyBottomColor: 0x0f172a,  // Navy city glow horizon
+    ambientColor: 0x1e293b,    // Dark moody cyber ambience
+    ambientIntensity: 0.3,
+    hemiSkyColor: 0x38bdf8,
+    hemiGroundColor: 0x020617,
+    sunColor: 0x93c5fd,        // Pale silver moonlight
+    sunIntensity: 0.45,
+    sunPosition: [-22, 45, -16],
+    fillColor: 0x06b6d4,       // Cyan street reflections
+    fillIntensity: 0.25,
+    fogColor: 0x090d16,
+    fogDensity: 0.008,
+  },
+};
 
 export interface SceneObstacleBox {
   minX: number;
@@ -526,6 +616,46 @@ export class WeatherManager {
     if (!this.terrainMat) return;
     this.terrainMat.roughness = THREE.MathUtils.lerp(0.65, 0.08, wetness);
     this.terrainMat.metalness = THREE.MathUtils.lerp(0.15, 0.85, wetness);
+  }
+
+  /**
+   * Visual 'Time of Day' System:
+   * Dynamically alters lighting (ambient, hemisphere, sun angle & intensity, fill light),
+   * skybox dome colors, and scene fog based on selected time of day (dawn, day, dusk, night).
+   */
+  public applyTimeOfDay(timeOfDay: TimeOfDay) {
+    const p = TIME_OF_DAY_PROFILES[timeOfDay] || TIME_OF_DAY_PROFILES.day;
+
+    // 1. Procedural Sky Dome Update
+    const skyMat = this.skyDomeMesh.material as THREE.MeshBasicMaterial;
+    if (skyMat && skyMat.map) {
+      skyMat.map.dispose();
+      skyMat.map = createSkyboxTexture(p.skyTopColor, p.skyBottomColor);
+      skyMat.needsUpdate = true;
+    }
+
+    // 2. Scene Background & Distance Fog
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.setHex(p.skyTopColor);
+    }
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.scene.fog.color.setHex(p.fogColor);
+      this.scene.fog.density = p.fogDensity;
+    }
+
+    // 3. Dynamic Environment Lighting
+    this.ambientLight.color.setHex(p.ambientColor);
+    this.ambientLight.intensity = p.ambientIntensity;
+
+    this.hemiLight.color.setHex(p.hemiSkyColor);
+    this.hemiLight.groundColor.setHex(p.hemiGroundColor);
+
+    this.sunLight.color.setHex(p.sunColor);
+    this.sunLight.intensity = p.sunIntensity;
+    this.sunLight.position.set(p.sunPosition[0], p.sunPosition[1], p.sunPosition[2]);
+
+    this.fillLight.color.setHex(p.fillColor);
+    this.fillLight.intensity = p.fillIntensity;
   }
 
   public update(delta: number, playerPos: THREE.Vector3) {

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { POŽAREVAC_POIS, PožarevacPoi, localCoordsToGps } from '../services/pozaravacPoi';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface GoogleMapsModalProps {
   isOpen: boolean;
@@ -41,9 +42,22 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
       p.serbianName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'google-maps',
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono">
-      <div className="relative w-full max-w-2xl bg-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl text-slate-200">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono"
+    >
+      <div
+        {...containerProps}
+        className="relative w-full max-w-2xl bg-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl text-slate-200"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -57,12 +71,7 @@ export const GoogleMapsModal: React.FC<GoogleMapsModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="md" />
         </div>
 
         {/* Map Type Bar & Search */}

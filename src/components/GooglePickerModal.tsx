@@ -19,6 +19,7 @@ import {
   PickedGoogleFile,
 } from '../services/googlePicker';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface GooglePickerModalProps {
   isOpen: boolean;
@@ -88,9 +89,22 @@ export const GooglePickerModal: React.FC<GooglePickerModalProps> = ({
     return <FileCode className="w-4 h-4 text-amber-400" />;
   };
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'google-picker',
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono">
-      <div className="relative w-full max-w-2xl bg-slate-900 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl text-slate-200 flex flex-col max-h-[90vh]">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn font-mono"
+    >
+      <div
+        {...containerProps}
+        className="relative w-full max-w-2xl bg-slate-900 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl text-slate-200 flex flex-col max-h-[90vh]"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -109,15 +123,13 @@ export const GooglePickerModal: React.FC<GooglePickerModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={() => {
+          <ModalCloseButton
+            onClose={() => {
               audioDsp.playClose();
               onClose();
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            size="md"
+          />
         </div>
 
         {/* Action Bar */}

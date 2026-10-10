@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { PlantPlot, InventoryItem } from '../services/streetEconomy';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface BotanicalFarmModalProps {
   isOpen: boolean;
@@ -68,9 +69,24 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
     }
   };
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'botanical-farm',
+  });
+
+  if (!isOpen) return null;
+
   return (
-    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md font-mono p-4">
-      <div className="bg-slate-900 border-2 border-emerald-500/70 rounded-3xl p-5 shadow-2xl max-w-2xl w-full text-slate-100 max-h-[90vh] flex flex-col">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-md font-mono p-4"
+    >
+      <div
+        {...containerProps}
+        className="bg-slate-900 border-2 border-emerald-500/70 rounded-3xl p-5 shadow-2xl max-w-2xl w-full text-slate-100 max-h-[90vh] flex flex-col relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-emerald-500/30">
           <div className="flex items-center gap-2">
@@ -87,12 +103,7 @@ export const BotanicalFarmModal: React.FC<BotanicalFarmModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="md" />
         </div>
 
         {/* Sub-banner: Info */}

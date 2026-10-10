@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User profile: only owner can read and write
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // Disallow querying user list for privacy
+      allow create: if isOwner(userId) && isValidId(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false;
+    }
+
+    // Players game save data: only owner can read and write
+    match /players/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create, update: if isOwner(userId) && isValidId(userId);
+      allow delete: if false;
+    }
+
+    // Vault Entities (Graveyard & Genetic Vault)
+    match /vault_entities/{entityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(entityId);
+      allow update: if isSignedIn() && (resource.data.creator == request.auth.uid || !('creator' in resource.data));
+      allow delete: if isSignedIn() && (resource.data.creator == request.auth.uid || !('creator' in resource.data));
+    }
+  }
+}

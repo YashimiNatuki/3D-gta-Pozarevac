@@ -29,6 +29,7 @@ import {
 import { TimeOfDay } from '../services/streetEconomy';
 import { audioDsp, RADIO_STATIONS, RadioStationId } from '../services/audioDsp';
 import { audioLocalizationManager } from '../services/audioLocalizationManager';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface BratinaPhoneModalProps {
   isOpen: boolean;
@@ -244,38 +245,28 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
     }
   };
 
-  // Close phone on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'bratina-phone',
+  });
 
   if (!isOpen) return null;
 
   return (
     <div
-      onClick={onClose}
-      className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md font-mono p-4"
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-md font-mono p-4"
     >
-      {/* Floating Exit Button visible on all screen sizes */}
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 sm:top-6 sm:right-8 z-[60] flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-600/90 hover:bg-rose-500 text-white font-mono text-xs font-black shadow-2xl border border-rose-400/50 hover:scale-105 transition cursor-pointer"
-        title="Spusti telefon i vrati se u igru [ESC]"
-      >
-        <X className="w-4 h-4" />
-        <span>SPUSTI TELEFON [ESC]</span>
-      </button>
+      {/* Prominent Exit Button in top-right corner */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-8 z-[60]">
+        <ModalCloseButton onClose={onClose} size="lg" title="Spusti telefon [ESC]" />
+      </div>
 
       {/* Modern Cyber Smartphone Frame */}
       <div
-        onClick={(e) => e.stopPropagation()}
+        {...containerProps}
         className="bg-slate-900 border-4 border-slate-700/80 rounded-[40px] shadow-2xl max-w-sm w-full text-slate-100 overflow-hidden flex flex-col h-[650px] max-h-[92vh] relative"
       >
         {/* Phone Notch & Speaker */}

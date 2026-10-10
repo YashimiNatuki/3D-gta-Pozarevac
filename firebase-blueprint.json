@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User player profile and game progression data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The unique Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "cash": { "type": "number", "description": "Player cash balance" },
+        "respect": { "type": "number", "description": "Player street respect points" },
+        "health": { "type": "number", "description": "Player health" },
+        "stamina": { "type": "number", "description": "Player stamina" },
+        "wantedLevel": { "type": "number", "description": "Police wanted stars" },
+        "lastLoginDate": { "type": "string", "description": "ISO date YYYY-MM-DD of last login" },
+        "loginStreak": { "type": "number", "description": "Consecutive days logged in" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["userId", "cash", "respect"]
+    },
+    "VaultEntity": {
+      "title": "VaultEntity",
+      "description": "Y!App Genetic Vault and Graveyard botanical process record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Entity unique ID" },
+        "name": { "type": "string", "description": "Strain or entity name" },
+        "type": { "type": "string", "enum": ["IMMORTAL", "INFECTED", "BURIED"], "description": "Entity state" },
+        "hash": { "type": "string", "description": "Process cryptographic hash" },
+        "frequency": { "type": "string", "description": "DSP tuning frequency" },
+        "strain": { "type": "string", "description": "Botanical strain" },
+        "thcPercent": { "type": "number", "description": "Active compound percentage" },
+        "cbdPercent": { "type": "number", "description": "Secondary compound percentage" },
+        "yieldGrams": { "type": "number", "description": "Yield in grams" },
+        "harvestTimestamp": { "type": "number", "description": "Harvest timestamp" },
+        "bpm": { "type": "number", "description": "Ambient room BPM" },
+        "humidity": { "type": "number", "description": "Room humidity percentage" },
+        "temperature": { "type": "number", "description": "Room temperature Celsius" },
+        "creator": { "type": "string", "description": "Creator user ID" }
+      },
+      "required": ["id", "name", "type"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Individual player profiles and game progress"
+    },
+    "/vault_entities/{entityId}": {
+      "schema": "VaultEntity",
+      "description": "Shared Genetic Vault and Graveyard botanical entries"
+    }
+  }
+}

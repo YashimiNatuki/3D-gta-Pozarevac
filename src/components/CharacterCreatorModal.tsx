@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { CustomCharacterConfig, ThugOutfitId, THUG_OUTFITS } from '../services/characterModel';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface CharacterCreatorModalProps {
   isOpen: boolean;
@@ -96,9 +97,22 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
     { label: '📱 Kong Smartfon', value: 'phone', desc: 'Holografski kripto telefon Konglomerat Preduzeća™' },
   ];
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'character-creator',
+  });
+
   return (
-    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-mono select-none">
-      <div className="bg-slate-900 border-2 border-emerald-500/80 rounded-3xl p-6 shadow-2xl max-w-xl w-full text-white max-h-[92vh] flex flex-col overflow-hidden">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-mono select-none"
+    >
+      <div
+        {...containerProps}
+        className="bg-slate-900 border-2 border-emerald-500/80 rounded-3xl p-6 shadow-2xl max-w-xl w-full text-white max-h-[92vh] flex flex-col overflow-hidden relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-emerald-500/30">
           <div className="flex items-center gap-2.5">
@@ -130,12 +144,7 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
               <Camera className="w-3.5 h-3.5" />
               <span>KAMERA NA LIKA</span>
             </button>
-            <button
-              onClick={onClose}
-              className="w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition"
-            >
-              ✕
-            </button>
+            <ModalCloseButton onClose={onClose} size="md" />
           </div>
         </div>
 

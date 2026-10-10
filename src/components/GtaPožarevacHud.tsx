@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MapPin,
   DollarSign,
@@ -155,6 +155,41 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
   // Modal za nadogradnju osobina
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Dynamic Reward Toasts (Cash & Respect/XP Gain) with CSS animations
+  interface RewardToast {
+    id: string;
+    type: 'cash' | 'xp';
+    amount: number;
+    title: string;
+  }
+  const [toasts, setToasts] = useState<RewardToast[]>([]);
+  const prevCashRef = useRef(stats.cash);
+  const prevRespectRef = useRef(stats.respect);
+
+  useEffect(() => {
+    if (stats.cash > prevCashRef.current) {
+      const diff = stats.cash - prevCashRef.current;
+      const id = Date.now().toString() + Math.random().toString();
+      setToasts((prev) => [...prev.slice(-3), { id, type: 'cash', amount: diff, title: 'THUG KEŠ' }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 3200);
+    }
+    prevCashRef.current = stats.cash;
+  }, [stats.cash]);
+
+  useEffect(() => {
+    if (stats.respect > prevRespectRef.current) {
+      const diff = stats.respect - prevRespectRef.current;
+      const id = Date.now().toString() + Math.random().toString();
+      setToasts((prev) => [...prev.slice(-3), { id, type: 'xp', amount: diff, title: 'RESPECT XP' }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 3200);
+    }
+    prevRespectRef.current = stats.respect;
+  }, [stats.respect]);
+
   // Prečica na tastaturi [V] za dobacivanje prolaznicima na srpskom
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -205,6 +240,38 @@ export const GtaPožarevacHud: React.FC<GtaPožarevacHudProps> = ({
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-blue-600 to-red-600 animate-ping opacity-75" />
         </div>
       )}
+
+      {/* 💰 DYNAMIC CASH & RESPECT XP NOTIFICATION POPUPS (CSS ANIMATED: FADE-IN & SLIDE-UP) */}
+      <div className="pointer-events-none fixed top-20 right-4 sm:right-6 z-50 flex flex-col items-end gap-2 font-mono">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`animate-slide-up-fade flex items-center gap-2.5 px-4 py-2 rounded-2xl shadow-2xl backdrop-blur-2xl border ${
+              toast.type === 'cash'
+                ? 'bg-slate-950/95 border-emerald-400 text-emerald-300 shadow-emerald-500/30'
+                : 'bg-slate-950/95 border-amber-400 text-amber-300 shadow-amber-500/30'
+            }`}
+          >
+            <div
+              className={`w-7 h-7 rounded-xl flex items-center justify-center font-black shadow ${
+                toast.type === 'cash'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'bg-gradient-to-tr from-amber-500 to-rose-500 text-slate-950'
+              }`}
+            >
+              {toast.type === 'cash' ? <DollarSign className="w-4 h-4 stroke-[2.5]" /> : <Flame className="w-4 h-4" />}
+            </div>
+            <div>
+              <div className="text-[9px] font-black tracking-wider uppercase text-slate-400">
+                {toast.title}
+              </div>
+              <div className="text-sm font-black drop-shadow tracking-tight">
+                +{toast.type === 'cash' ? `$${toast.amount.toLocaleString()}` : `${toast.amount} PTS`}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* ========================================================= */}
       {/* ⭐ WANTED LEVEL & STREET THUG STARS (Centar Gore)         */}

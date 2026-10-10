@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ThreeCanvas } from './components/ThreeCanvas';
 import { HudOverlay } from './components/HudOverlay';
 import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
@@ -7,6 +7,7 @@ import { GraveyardVaultModal } from './components/GraveyardVaultModal';
 import { EntityItem, initialVaultEntities, SystemEngine } from './services/systemEngine';
 import { VeoStudioModal } from './components/VeoStudioModal';
 import { GameIntroVideoModal } from './components/GameIntroVideoModal';
+import { DailyLoginBonusModal } from './components/DailyLoginBonusModal';
 import { GtaPožarevacHud } from './components/GtaPožarevacHud';
 import { CharacterCreatorModal } from './components/CharacterCreatorModal';
 import { BratinaPhoneModal } from './components/BratinaPhoneModal';
@@ -14,6 +15,7 @@ import { StreetMarketModal } from './components/StreetMarketModal';
 import { BotanicalFarmModal } from './components/BotanicalFarmModal';
 import { audioDsp } from './services/audioDsp';
 import { initAuth } from './services/firebaseAuth';
+import { checkAndApplyDailyBonus, testFirestoreConnection } from './services/firestoreService';
 import {
   CharacterStats,
   Quest,
@@ -40,6 +42,7 @@ import { MasterPlanModal } from './components/MasterPlanModal';
 import { PickedGoogleFile } from './services/googlePicker';
 import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
 import { CctvOverlay } from './components/CctvOverlay';
+import { cinematicIntroService } from './services/cinematicIntroService';
 import {
   CctvSystem,
   CctvCameraDef,
@@ -54,6 +57,59 @@ import {
   TimeOfDay,
   StreetEconomyEngine,
 } from './services/streetEconomy';
+
+/**
+ * Initialization hook in App.tsx that checks for a stored cinematic intro flag
+ * and automatically plays the GameIntroVideoModal if no game save data is detected,
+ * effectively setting the 'špica' as the user's first experience.
+ */
+export function useCinematicIntroInit() {
+  const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
+    return cinematicIntroService.getEffectiveVideoUrl();
+  });
+
+  const [isIntroOpen, setIsIntroOpen] = useState<boolean>(() => {
+    return cinematicIntroService.shouldTriggerIntroOnLaunch();
+  });
+
+  useEffect(() => {
+    // Check for stored cinematic intro flag and ensure no previous game save exists
+    const shouldPlayIntro = cinematicIntroService.shouldTriggerIntroOnLaunch();
+    if (shouldPlayIntro) {
+      const targetVideo = cinematicIntroService.getEffectiveVideoUrl();
+      setIntroVideoUrl(targetVideo);
+      setIsIntroOpen(true);
+      cinematicIntroService.openIntro();
+    }
+  }, []);
+
+  const handleCloseIntro = useCallback(() => {
+    cinematicIntroService.closeIntro();
+    setIsIntroOpen(false);
+  }, []);
+
+  const handleUpdateIntroVideo = useCallback((url: string) => {
+    cinematicIntroService.setIntroVideoUrl(url);
+    setIntroVideoUrl(url);
+  }, []);
+
+  const handleSetAsIntroVideo = useCallback((url: string) => {
+    cinematicIntroService.setIntroVideoUrl(url);
+    setIntroVideoUrl(url);
+    cinematicIntroService.openIntro();
+    setIsIntroOpen(true);
+  }, []);
+
+  return {
+    isIntroOpen,
+    setIsIntroOpen,
+    introVideoUrl,
+    setIntroVideoUrl,
+    handleCloseIntro,
+    handleUpdateIntroVideo,
+    handleSetAsIntroVideo,
+  };
+}
 
 export function App() {
   const [score, setScore] = useState(1450);
@@ -112,9 +168,29 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
-  const [isIntroOpen, setIsIntroOpen] = useState(false);
-  const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('gta_pozaravac_intro_video') || null;
+
+  // Cinematic Intro Initialization Hook:
+  // Automatically triggers GameIntroVideoModal if no previous save exists, setting 'špica' as the first experience
+  const {
+    isIntroOpen,
+    setIsIntroOpen,
+    introVideoUrl,
+    setIntroVideoUrl,
+    handleCloseIntro,
+    handleUpdateIntroVideo,
+    handleSetAsIntroVideo,
+  } = useCinematicIntroInit();
+  const [dailyBonus, setDailyBonus] = useState<{
+    isOpen: boolean;
+    bonusCash: number;
+    bonusRespect: number;
+    streak: number;
+    isFirstLogin?: boolean;
+  }>({
+    isOpen: false,
+    bonusCash: 0,
+    bonusRespect: 0,
+    streak: 1,
   });
   const [isPhoneOpen, setIsPhoneOpen] = useState(false);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
@@ -675,18 +751,15 @@ export function App() {
       <VeoStudioModal
         isOpen={isVeoOpen}
         onClose={() => setIsVeoOpen(false)}
-        onSetAsIntroVideo={(url) => {
-          setIntroVideoUrl(url);
-          setIsIntroOpen(true);
-        }}
+        onSetAsIntroVideo={handleSetAsIntroVideo}
       />
 
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
       <GameIntroVideoModal
         isOpen={isIntroOpen}
-        onClose={() => setIsIntroOpen(false)}
+        onClose={handleCloseIntro}
         introVideoUrl={introVideoUrl}
-        onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
+        onUpdateIntroVideo={handleUpdateIntroVideo}
       />
 
       {/* 3D Character Creator & Customizer Modal (Kreiraj Lika) */}

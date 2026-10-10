@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { TurfZone, DynamicMissionEngine } from '../services/dynamicMissionEngine';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
 
 export interface TurfWarModalProps {
   isOpen: boolean;
@@ -43,9 +44,22 @@ export const TurfWarModal: React.FC<TurfWarModalProps> = ({
     (z) => z.controllingGang === 'Y!App Konglomerat' && z.controlPercentage >= 80
   ).length;
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'turf-war',
+  });
+
   return (
-    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md font-mono p-4">
-      <div className="bg-slate-900 border-2 border-red-500/80 rounded-3xl p-6 shadow-2xl max-w-2xl w-full text-white max-h-[90vh] flex flex-col">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="pointer-events-auto fixed inset-0 flex items-center justify-center bg-slate-950/85 backdrop-blur-md font-mono p-4"
+    >
+      <div
+        {...containerProps}
+        className="bg-slate-900 border-2 border-red-500/80 rounded-3xl p-6 shadow-2xl max-w-2xl w-full text-white max-h-[90vh] flex flex-col relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -61,12 +75,7 @@ export const TurfWarModal: React.FC<TurfWarModalProps> = ({
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="md" />
         </div>
 
         {/* Overview Stats Bar */}

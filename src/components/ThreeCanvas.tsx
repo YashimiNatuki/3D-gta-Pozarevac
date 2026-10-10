@@ -5,6 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { audioDsp, spatialSoundManager } from '../services/audioDsp';
+import { ambientEmitterSystem } from '../services/ambientEmitterSystem';
 import { CharacterStats, Quest } from '../services/characterProgress';
 import { POŽAREVAC_POIS, PožarevacPoi } from '../services/pozaravacPoi';
 import { createPožarevacSatelliteTexture } from '../services/satelliteTexture';
@@ -21,6 +22,7 @@ import { PoliceAndDogsSystem } from '../services/policeAndDogsSystem';
 import { DynamicMission } from '../services/dynamicMissionEngine';
 import { PlantPlot } from '../services/streetEconomy';
 import { CctvSystem } from '../services/cctvSystem';
+import { TimeOfDay } from '../services/streetEconomy';
 
 export interface ThreeCanvasProps {
   cubeColor: string;
@@ -35,6 +37,7 @@ export interface ThreeCanvasProps {
   bloomEnabled?: boolean;
   weather: WeatherState;
   onWeatherChange?: (w: WeatherState) => void;
+  timeOfDay?: TimeOfDay;
   characterStats: CharacterStats;
   onUpdateCharacterPosition?: (pos: { x: number; z: number; heading: number }) => void;
   onCompleteQuest?: (questId: string) => void;
@@ -65,6 +68,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   bloomEnabled = true,
   weather = 'Clear',
   onWeatherChange,
+  timeOfDay = 'day',
   characterStats,
   onUpdateCharacterPosition,
   onCompleteQuest,
@@ -90,6 +94,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
+
+  const timeOfDayRef = useRef<TimeOfDay>(timeOfDay);
+  timeOfDayRef.current = timeOfDay;
+
+  // React to dynamic Time of Day changes (skybox, sun angle, hemisphere, ambient)
+  useEffect(() => {
+    if (weatherManagerRef.current) {
+      weatherManagerRef.current.applyTimeOfDay(timeOfDay);
+    }
+  }, [timeOfDay]);
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -186,6 +200,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // Dynamic Weather Manager with skybox, periodic automated transitions & rain/storm
     const weatherMgr = new WeatherManager(scene, ambientLight, hemiLight, sunLight, fillLight);
     weatherManagerRef.current = weatherMgr;
+    weatherMgr.applyTimeOfDay(timeOfDayRef.current);
     weatherMgr.setOnStateChange((newState) => {
       if (onWeatherChange) onWeatherChange(newState);
     });
@@ -710,8 +725,20 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         cameraDir.z
       );
 
-      // Randomized Spatial Ambient City Sound Emitters (Church bells, park wind, distant horns)
-      audioDsp.updateSpatialCityAmbience(controller.position);
+      // Spatialized Sound Emitters for Ambient Street Noises (Distant sirens, dog barks, bells, chatter)
+      // Fades dynamically based on player position in Požarevac and layers by timeOfDay
+      ambientEmitterSystem.update(
+        controller.position,
+        timeOfDayRef.current,
+        delta,
+        controller.isSprinting
+      );
+
+      audioDsp.updateSpatialCityAmbience(
+        controller.position,
+        timeOfDayRef.current,
+        controller.isSprinting
+      );
 
       // Update AI Traffic System (Slows down near player)
       traffic.update(delta, controller.position);

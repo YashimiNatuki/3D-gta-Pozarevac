@@ -92,6 +92,16 @@ export class AudioDspEngine {
     this.initContext();
   }
 
+  public getContext(): AudioContext | null {
+    this.initContext();
+    return this.ctx;
+  }
+
+  public getMasterGain(): GainNode | null {
+    this.initContext();
+    return this.masterGain;
+  }
+
   private initContext() {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -436,26 +446,201 @@ export class AudioDspEngine {
   // Distant church bell, park wind, distant horn — NO PERSISTENT ALARM!
   // =========================================================================
 
-  public updateSpatialCityAmbience(playerPos: { x: number; y: number; z: number }) {
+  public updateSpatialCityAmbience(
+    playerPos: { x: number; y: number; z: number },
+    timeOfDay?: string,
+    inVehicle = false
+  ) {
     this.initContext();
     if (!this.ctx || !this.masterGain) return;
 
     const now = performance.now();
-    if (now - this.lastAmbienceEventTime < 9000) return;
+    // Reduce frequency when inside vehicle (16s interval vs 7-10s on foot)
+    const minInterval = inVehicle ? 16000 : 7500;
+    if (now - this.lastAmbienceEventTime < minInterval) return;
     this.lastAmbienceEventTime = now;
 
-    // Pick a random spatial city event
-    const eventType = Math.random();
-    if (eventType < 0.35) {
-      // Distant Saborna Crkva Church Bell chime (East Požarevac: x=18, z=-20)
-      this.playDistantBell(18, 12, -20);
-    } else if (eventType < 0.7) {
-      // Distant boulevard car horn (Far north avenue: x=0, z=30)
-      this.playDistantCarHorn(0, 0.5, 30);
-    } else {
-      // Gradski Park tree wind gust (West: x=-16, z=14)
-      this.playParkBreeze(-16, 2, 14);
+    const isNight = timeOfDay === 'night' || timeOfDay === 'dusk';
+    const isMorning = timeOfDay === 'dawn';
+
+    // Location Analysis in Požarevac:
+    const distToPark = Math.hypot(playerPos.x - (-16), playerPos.z - 14);
+    const distToKorzo = Math.hypot(playerPos.x - 0, playerPos.z - 0);
+    const distToBuvljak = Math.hypot(playerPos.x - (-18), playerPos.z - (-14));
+    const distToChurch = Math.hypot(playerPos.x - 18, playerPos.z - (-20));
+
+    const roll = Math.random();
+
+    // 1. If near Gradski Park: breeze or distant dog bark
+    if (distToPark < 24) {
+      if (roll < 0.6) {
+        this.playParkBreeze(-16, 2, 14);
+      } else {
+        this.playDistantDogBark(-12, 1, 18);
+      }
+      return;
     }
+
+    // 2. If near Buvljak / Pruga: distant dog bark or train screech / siren
+    if (distToBuvljak < 24) {
+      if (roll < 0.5) {
+        this.playDistantDogBark(-19, 1, -16);
+      } else {
+        this.playDistantSiren(-25, 3, -10);
+      }
+      return;
+    }
+
+    // 3. If near Saborna Crkva: church bell
+    if (distToChurch < 26 && (isMorning || roll < 0.45)) {
+      this.playDistantBell(18, 12, -20);
+      return;
+    }
+
+    // 4. If in Center / Korzo / Tabačka:
+    if (distToKorzo < 22 && !isNight) {
+      if (roll < 0.5) {
+        this.playCityChatter(playerPos.x + (Math.random() - 0.5) * 8, 1.5, playerPos.z + (Math.random() - 0.5) * 8);
+      } else {
+        this.playDistantCarHorn(0, 0.5, 28);
+      }
+      return;
+    }
+
+    // 5. Default General City Events based on Time of Day
+    if (isNight) {
+      // Night: distant police sirens and stray dogs predominate
+      if (roll < 0.55) {
+        this.playDistantSiren(playerPos.x + (Math.random() > 0.5 ? 25 : -25), 4, playerPos.z + 15);
+      } else {
+        this.playDistantDogBark(playerPos.x - 14, 1, playerPos.z - 10);
+      }
+    } else {
+      // Daytime: bustle, distant horns, and bells
+      if (roll < 0.4) {
+        this.playDistantCarHorn(0, 0.5, 30);
+      } else if (roll < 0.7) {
+        this.playCityChatter(playerPos.x + 6, 1.5, playerPos.z - 4);
+      } else {
+        this.playDistantBell(18, 12, -20);
+      }
+    }
+  }
+
+  /**
+   * Distant Police / Emergency Siren Wail in Požarevac City:
+   * Smooth spatial LFO pitch shift from 650Hz to 900Hz
+   */
+  private playDistantSiren(x: number, y: number, z: number) {
+    if (!this.ctx || !this.masterGain) return;
+    const panner = this.createSpatialPanner(x, y, z, 10.0, 100.0);
+    if (!panner) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    // Two-cycle subtle siren sweep
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.linearRampToValueAtTime(880, now + 0.8);
+    osc.frequency.linearRampToValueAtTime(640, now + 1.6);
+    osc.frequency.linearRampToValueAtTime(880, now + 2.4);
+    osc.frequency.linearRampToValueAtTime(640, now + 3.0);
+
+    const bpf = this.ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(750, now);
+    bpf.Q.setValueAtTime(4.0, now);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.045, now + 0.5);
+    gain.gain.setValueAtTime(0.045, now + 2.4);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 3.2);
+
+    osc.connect(bpf);
+    bpf.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 3.25);
+  }
+
+  /**
+   * Distant Stray Dog Bark:
+   * Short acoustic double-bark impulse
+   */
+  private playDistantDogBark(x: number, y: number, z: number) {
+    if (!this.ctx || !this.masterGain) return;
+    const panner = this.createSpatialPanner(x, y, z, 8.0, 75.0);
+    if (!panner) return;
+
+    const now = this.ctx.currentTime;
+    [0, 0.22].forEach((offset) => {
+      const t = now + offset;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const filter = this.ctx!.createBiquadFilter();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(450, t);
+      osc.frequency.exponentialRampToValueAtTime(240, t + 0.14);
+
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(720, t);
+      filter.Q.setValueAtTime(5.0, t);
+
+      gain.gain.setValueAtTime(0.04, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.masterGain!);
+
+      osc.start(t);
+      osc.stop(t + 0.16);
+    });
+  }
+
+  /**
+   * Distant City Chatter / Street Bustle:
+   * Murmur of cafe visitors and street chatter
+   */
+  private playCityChatter(x: number, y: number, z: number) {
+    if (!this.ctx || !this.masterGain) return;
+    const panner = this.createSpatialPanner(x, y, z, 6.0, 50.0);
+    if (!panner) return;
+
+    const now = this.ctx.currentTime;
+    const bufferSize = Math.floor(this.ctx.sampleRate * 1.5);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI);
+    }
+
+    const noiseSource = this.ctx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+
+    const bpf = this.ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(950, now);
+    bpf.Q.setValueAtTime(3.2, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.035, now + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.45);
+
+    noiseSource.connect(bpf);
+    bpf.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.masterGain);
+
+    noiseSource.start(now);
+    noiseSource.stop(now + 1.5);
   }
 
   private playDistantBell(x: number, y: number, z: number) {
@@ -1369,16 +1554,6 @@ export class AudioDspEngine {
 
   public playSelect() {
     this.playBeep(1100, 0.03);
-  }
-
-  public getContext(): AudioContext | null {
-    this.initContext();
-    return this.ctx;
-  }
-
-  public getMasterGain(): GainNode | null {
-    this.initContext();
-    return this.masterGain;
   }
 }
 

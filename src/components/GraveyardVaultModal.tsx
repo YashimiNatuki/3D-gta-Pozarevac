@@ -12,6 +12,9 @@ import {
 } from 'lucide-react';
 import { EntityItem, SystemEngine } from '../services/systemEngine';
 import { audioDsp } from '../services/audioDsp';
+import { useModalManager, ModalCloseButton } from '../hooks/useModalManager';
+
+export type VaultEntity = EntityItem;
 
 export interface GraveyardVaultModalProps {
   isOpen: boolean;
@@ -76,9 +79,24 @@ export const GraveyardVaultModal: React.FC<GraveyardVaultModalProps> = ({
   const filteredEntities =
     activeTab === 'ALL' ? entities : entities.filter((e) => e.type === activeTab);
 
+  const { zIndex, handleBackdropClick, containerProps } = useModalManager({
+    isOpen,
+    onClose,
+    modalId: 'graveyard-vault',
+  });
+
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl text-slate-200 font-sans">
+    <div
+      onClick={handleBackdropClick}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn"
+    >
+      <div
+        {...containerProps}
+        className="relative w-full max-w-2xl bg-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl text-slate-200 font-sans"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -95,13 +113,7 @@ export const GraveyardVaultModal: React.FC<GraveyardVaultModalProps> = ({
               <p className="text-xs text-slate-400 font-mono">Arhitekta: Yashime | Konglomerat Preduzeće™</p>
             </div>
           </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <ModalCloseButton onClose={onClose} size="md" />
         </div>
 
         {/* Audit Metrics Banner */}
