@@ -179,7 +179,8 @@ export function getStoryCampaignMission(chapter: number): DynamicMission | null 
 export const CITY_DISTRICT_MISSION_IDS = [
   'city_djura_busije_route', 'city_tabacka_korzo_signal', 'city_buvljak_park_watch',
   'city_park_cacalica_spore', 'city_cacalica_tulba_ridge', 'city_tulba_hipodrom_caravan',
-  'city_hipodrom_vasariste_route',
+  'city_hipodrom_vasariste_route', 'city_trg_djurdjeve_rupe_escape', 'city_djurdjeve_rupe_trg_delivery',
+  'city_korzo_park_turf',
 ] as const;
 
 /** One visible route contract per major district; this supplements, rather than replaces, the existing missions. */
@@ -232,6 +233,27 @@ export const CITY_DISTRICT_MISSIONS: DynamicMission[] = [
     dialogueText: 'Yashime: Sad kad si video ostale sektore, zatvori prsten preko Hipodroma do Vašarišta.', completionText: 'Glavni gradski prsten je potvrđen. Svi sektori imaju aktivne ugovore.', requiredTimeOfDay: 'any',
     checkpoints: [{ label: 'Potvrdi ulaz na Hipodrom', x: -28, z: 26 }, { label: 'Završi prsten na Vašarištu', x: -24, z: 12 }],
     rewardCash: 4700, rewardXp: 760, rewardRespect: 32, rewardGearName: 'Požarevac City Ring', status: 'available', isDaily: false,
+  },
+  {
+    id: 'city_trg_djurdjeve_rupe_escape', title: 'Trg → Đurđeve rupe: bekstvo kroz blokove', type: 'escape_police', giver: GANG_CHARACTERS.murija,
+    locationName: 'Trg Radomira Vujovića → Đurđeve rupe → Buvljak', targetCoords: { x: 0, z: 0 }, description: 'Pokreni poternu na Trgu, preseci kroz Đurđeve rupe i ugasi je u skrovištu kod Buvljaka.',
+    dialogueText: 'Inspektor: Ovog puta nema prečice. Trg, Đurđeve rupe, pa depo kod pruge — pokaži da poznaješ ceo centralni sektor.', completionText: 'Potera je ugašena kod Buvljaka, a centralna ruta je potvrđena.', requiredTimeOfDay: 'any', timeLimitSeconds: 540, wantedLevelOnStart: 1,
+    checkpoints: [{ label: 'Pokreni rutu na Trgu', x: 0, z: 0 }, { label: 'Prođi kroz Đurđeve rupe', x: -8, z: -18 }, { label: 'Skloni se kod Buvljaka', x: -18, z: -14 }],
+    rewardCash: 3900, rewardXp: 640, rewardRespect: 27, rewardGearName: 'Centralni Radio Skener', wantedLevelChange: -1, status: 'available', isDaily: false,
+  },
+  {
+    id: 'city_djurdjeve_rupe_trg_delivery', title: 'Đurđeve rupe → Trg: paket kroz centar', type: 'delivery', giver: GANG_CHARACTERS.sale,
+    locationName: 'Đurđeve rupe → Trg Radomira Vujovića', targetCoords: { x: -8, z: -18 }, description: 'Preuzmi fiktivni paket u Đurđevim rupama i dostavi ga do centralnog Trga bez preskakanja rute.',
+    dialogueText: 'Sale: Ovo je gradski test, brate. Kreneš iz rupa, prođeš blokove i ostaviš paket na Trgu — nema teleportovanja.', completionText: 'Centralna dostava je čista. Trg je sada povezan sa južnim blokovima.', requiredTimeOfDay: 'day', timeLimitSeconds: 480,
+    checkpoints: [{ label: 'Preuzmi paket u Đurđevim rupama', x: -8, z: -18 }, { label: 'Dostavi paket na Trgu', x: 0, z: 0 }],
+    rewardCash: 2700, rewardXp: 450, rewardRespect: 18, rewardGearName: 'Trg Courier Tag', status: 'available', isDaily: true,
+  },
+  {
+    id: 'city_korzo_park_turf', title: 'Korzo ↔ Park: zelena linija teritorije', type: 'turf_war', giver: GANG_CHARACTERS.yashime,
+    locationName: 'Stari Korzo → Gradski Park', targetCoords: { x: 9, z: -4 }, turfZoneId: 'tz_korzo', description: 'Poveži noćnu zonu Korzoa sa Gradskim Parkom, odbrani kontrolnu tačku i vrati centralni prolaz Konglomeratu.',
+    dialogueText: 'Yashime: Korzo bez Parka je slepa ulica. Obezbedi noćnu zonu, pređi do aleje i vrati nam centralni prolaz.', completionText: 'Korzo i Park su povezani. Centralna linija ponovo radi za Konglomerat.', requiredTimeOfDay: 'night',
+    checkpoints: [{ label: 'Obezbedi prilaz Starom Korzou', x: 9, z: -4 }, { label: 'Odbrani prolaz u Gradskom Parku', x: -11, z: 7 }],
+    rewardCash: 5600, rewardXp: 920, rewardRespect: 46, rewardGearName: 'Greenline Territory Badge', wantedLevelChange: 1, status: 'available', isDaily: false,
   },
 ];
 
