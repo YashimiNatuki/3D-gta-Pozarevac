@@ -31,7 +31,7 @@
 ### Task 1: Purple street-thug intro remaster
 
 **Files:**
-- Create: `public/videos/GameIntro_Pozarevac_ThugLife_Remaster.mp4`
+- Modify: `public/videos/GameIntro_Pozarevac_ThugLife.mp4`
 - Create: `docs/media/gta-intro-remaster.md`
 - Test: `ffprobe` metadata and representative frame extraction
 
@@ -91,4 +91,4 @@
 
 - [x] Run `tsc --noEmit`, gameplay invariants, Vite build, `git diff --check`, ffprobe and browser preview.
 - [x] Confirm AiChatBrat has no changes.
-- [ ] Commit and push only the GTA branch and update the private orchestrator report.
+- [x] Commit and push only the GTA branch and update the private orchestrator report.
