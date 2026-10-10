@@ -328,8 +328,34 @@ export default defineConfig(() => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+      host: '0.0.0.0',
+      allowedHosts: true as const,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules')) {
+              if (id.includes('/firebase/auth')) return 'firebase-auth-vendor';
+              if (id.includes('/firebase/firestore')) return 'firebase-firestore-vendor';
+              if (id.includes('/firebase/')) return 'firebase-core-vendor';
+              if (id.includes('/three/') || id.includes('/cannon-es/')) return 'three-vendor';
+              if (id.includes('/lucide-react/')) return 'icons-vendor';
+              if (id.includes('/react/') || id.includes('/react-dom/')) return 'react-vendor';
+            }
+            if (id.includes('/src/services/')) {
+              if (/characterModel|thirdPersonController|trafficSystem|policeAndDogsSystem|weatherManager|weatherSystem|satelliteTexture|cctvSystem|physicsEngine/.test(id)) {
+                return 'three-engine';
+              }
+              if (/firebase|firestore|googleDrive|googleDocs|googlePicker/.test(id)) return 'integrations';
+              return 'game-services';
+            }
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

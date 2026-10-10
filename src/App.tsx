@@ -1,16 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HudOverlay } from './components/HudOverlay';
-import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
-import { AiChatDrawer } from './components/AiChatDrawer';
-import { GraveyardVaultModal } from './components/GraveyardVaultModal';
+import { type GameSaveData } from './components/DriveSyncModal';
 import { EntityItem, initialVaultEntities, SystemEngine } from './services/systemEngine';
-import { VeoStudioModal } from './components/VeoStudioModal';
-import { GameIntroVideoModal } from './components/GameIntroVideoModal';
 import { GtaPožarevacHud } from './components/GtaPožarevacHud';
-import { CharacterCreatorModal } from './components/CharacterCreatorModal';
-import { BratinaPhoneModal } from './components/BratinaPhoneModal';
-import { StreetMarketModal } from './components/StreetMarketModal';
-import { BotanicalFarmModal } from './components/BotanicalFarmModal';
 import { audioDsp } from './services/audioDsp';
 import { initAuth } from './services/firebaseAuth';
 import {
@@ -43,11 +35,6 @@ import {
   recordTradePurchase,
   recordTradeSale,
 } from './services/missionRules';
-import { TurfWarModal } from './components/TurfWarModal';
-import { GoogleDocsModal } from './components/GoogleDocsModal';
-import { GoogleMapsModal } from './components/GoogleMapsModal';
-import { GooglePickerModal } from './components/GooglePickerModal';
-import { MasterPlanModal } from './components/MasterPlanModal';
 import { PickedGoogleFile } from './services/googlePicker';
 import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
 import { isGameProgressData, readGameProgress, writeGameProgress, type GameProgressData } from './services/gameProgress';
@@ -67,6 +54,21 @@ import {
   StreetEconomyEngine,
   isWithinMarketZone,
 } from './services/streetEconomy';
+
+const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
+const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer })));
+const GraveyardVaultModal = React.lazy(() => import('./components/GraveyardVaultModal').then((module) => ({ default: module.GraveyardVaultModal })));
+const VeoStudioModal = React.lazy(() => import('./components/VeoStudioModal').then((module) => ({ default: module.VeoStudioModal })));
+const GameIntroVideoModal = React.lazy(() => import('./components/GameIntroVideoModal').then((module) => ({ default: module.GameIntroVideoModal })));
+const CharacterCreatorModal = React.lazy(() => import('./components/CharacterCreatorModal').then((module) => ({ default: module.CharacterCreatorModal })));
+const BratinaPhoneModal = React.lazy(() => import('./components/BratinaPhoneModal').then((module) => ({ default: module.BratinaPhoneModal })));
+const StreetMarketModal = React.lazy(() => import('./components/StreetMarketModal').then((module) => ({ default: module.StreetMarketModal })));
+const BotanicalFarmModal = React.lazy(() => import('./components/BotanicalFarmModal').then((module) => ({ default: module.BotanicalFarmModal })));
+const TurfWarModal = React.lazy(() => import('./components/TurfWarModal').then((module) => ({ default: module.TurfWarModal })));
+const GoogleDocsModal = React.lazy(() => import('./components/GoogleDocsModal').then((module) => ({ default: module.GoogleDocsModal })));
+const GoogleMapsModal = React.lazy(() => import('./components/GoogleMapsModal').then((module) => ({ default: module.GoogleMapsModal })));
+const GooglePickerModal = React.lazy(() => import('./components/GooglePickerModal').then((module) => ({ default: module.GooglePickerModal })));
+const MasterPlanModal = React.lazy(() => import('./components/MasterPlanModal').then((module) => ({ default: module.MasterPlanModal })));
 
 const ThreeCanvas = React.lazy(() =>
   import('./components/ThreeCanvas').then((module) => ({ default: module.ThreeCanvas }))
@@ -929,6 +931,7 @@ export function App() {
         vaultStats={vaultStats}
       />
 
+      <React.Suspense fallback={null}>
       {/* Google Drive Persistence Modal */}
       <DriveSyncModal
         isOpen={isDriveOpen}
@@ -1103,6 +1106,8 @@ export function App() {
         isOpen={isMasterPlanOpen}
         onClose={() => setIsMasterPlanOpen(false)}
       />
+
+      </React.Suspense>
 
       {/* CCTV Hacker Surveillance Overlay */}
       <CctvOverlay

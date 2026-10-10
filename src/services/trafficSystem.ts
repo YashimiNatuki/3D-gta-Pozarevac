@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { audioDsp } from './audioDsp';
 import { CITY_BUILDING_BOXES } from './weatherManager';
 import { audioLocalizationManager } from './audioLocalizationManager';
+import { SpatialHash2D } from './spatialHash';
 
 export interface Vehicle {
   mesh: THREE.Group;
@@ -18,6 +19,7 @@ export class TrafficSystem {
   private scene: THREE.Scene;
   private lastDriverVoiceTime = 0;
   private lastCrashSoundTime = 0;
+  private buildingHash = new SpatialHash2D<typeof CITY_BUILDING_BOXES[number]>(8);
 
   // Mathematically validated routes adhering strictly to Požarevac avenues,
   // preventing collisions with building bounding boxes.
@@ -77,6 +79,7 @@ export class TrafficSystem {
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+    CITY_BUILDING_BOXES.forEach((building) => this.buildingHash.insert({ ...building, value: building }));
     this.spawnVehicles();
   }
 
@@ -263,7 +266,13 @@ export class TrafficSystem {
         // Safety steering: verify forward ray doesn't intersect building boxes
         const nextPos = v.mesh.position.clone().addScaledVector(dir, effectiveSpeed * delta);
         let safeToMove = true;
-        for (const b of CITY_BUILDING_BOXES) {
+        const nearbyBuildings = this.buildingHash.query({
+          minX: nextPos.x - 0.8,
+          maxX: nextPos.x + 0.8,
+          minZ: nextPos.z - 0.8,
+          maxZ: nextPos.z + 0.8,
+        });
+        for (const b of nearbyBuildings) {
           if (
             nextPos.x >= b.minX - 0.8 &&
             nextPos.x <= b.maxX + 0.8 &&

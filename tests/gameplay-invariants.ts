@@ -38,6 +38,7 @@ import {
   StreetEconomyEngine,
 } from '../src/services/streetEconomy';
 import { AdaptiveRenderBudget, getInitialPixelRatio } from '../src/services/rendererPerformance';
+import { SpatialHash2D } from '../src/services/spatialHash';
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',
@@ -52,6 +53,13 @@ const routeMission: StatefulMission = {
   ...base,
   checkpoints: [{ label: 'Preuzmi paket', x: 0, z: -10 }, { label: 'Isporuči paket', x: 8, z: -5 }],
 };
+
+const spatialHash = new SpatialHash2D<string>(10);
+spatialHash.insert({ minX: -1, maxX: 1, minZ: -1, maxZ: 1, value: 'central' });
+spatialHash.insert({ minX: 19, maxX: 21, minZ: 19, maxZ: 21, value: 'far' });
+assert.deepEqual(spatialHash.query({ minX: -2, maxX: 2, minZ: -2, maxZ: 2 }), ['central']);
+assert.deepEqual(spatialHash.query({ minX: 19, maxX: 21, minZ: 19, maxZ: 21 }), ['far']);
+assert.deepEqual(spatialHash.query({ minX: 100, maxX: 101, minZ: 100, maxZ: 101 }), []);
 
 assert.equal(getInitialPixelRatio(3, 4), 1.25);
 assert.equal(getInitialPixelRatio(1.5, 16), 1.5);
