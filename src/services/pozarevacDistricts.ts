@@ -21,7 +21,7 @@ export interface PozarevacDistrict {
 export const POZAREVAC_DISTRICTS: readonly PozarevacDistrict[] = [
   { id: 'djura', name: 'Djuranske Favele — Đura', aliases: ['Đura', 'Djura', 'Djuranske favele', 'Đuranske favele'], center: { x: -1, z: 0 }, radius: 6, landmarkKey: 'djura', marketRole: 'sell', sellMultiplier: 1.16, isLocalGameLabel: true },
   { id: 'blok-c', name: 'Blok C — Tabačka centar', aliases: ['Blok C', 'Tabačka centar', 'Tabacka centar'], center: { x: 0, z: -10 }, radius: 7, landmarkKey: 'tabacka_carsija', turfZoneId: 'tz_tabacka', marketRole: 'sell', sellMultiplier: 1.12, isLocalGameLabel: true },
-  { id: 'cacalica', name: 'Čačalica', aliases: ['Cacalica', 'Čačalica Šuma'], center: { x: 15, z: 12 }, radius: 8, landmarkKey: 'cacalica', turfZoneId: 'tz_cacalica', marketRole: 'sell', sellMultiplier: 1.04 },
+  { id: 'cacalica', name: 'Čačalica', aliases: ['Cacalica', 'Čačalica Šuma'], center: { x: 66.6, z: 49.4 }, radius: 8, landmarkKey: 'cacalica', turfZoneId: 'tz_cacalica', marketRole: 'sell', sellMultiplier: 1.04 },
   { id: 'busije', name: 'Busije', aliases: ['Busije'], center: { x: -25, z: -4 }, radius: 7, landmarkKey: 'busije', marketRole: 'sell', sellMultiplier: 1.20, isLocalGameLabel: true },
   { id: 'djurdjeve-rupe', name: 'Đurđeve rupe', aliases: ['Đurđeve rupe', 'Djurđeve rupe', 'Djurdjeve rupe'], center: { x: -8, z: -18 }, radius: 7, landmarkKey: 'djurdjeve_rupe', marketRole: 'sell', sellMultiplier: 1.24, isLocalGameLabel: true },
   { id: 'hipodrom', name: 'Hipodrom', aliases: ['Hipodrom Požarevac'], center: { x: -28, z: 26 }, radius: 9, landmarkKey: 'hipodrom', turfZoneId: 'tz_hipodrom', marketRole: 'sell', sellMultiplier: 1.22 },

@@ -146,7 +146,7 @@ export const POZAREVAC_STORY_CAMPAIGN: readonly DynamicMission[] = [
   {
     id: 'story_pozarevac_03', campaignChapter: 3,
     title: 'Prva leja: posađeno, zaliveno, ubrano', type: 'plant_harvest', giver: GANG_CHARACTERS.yashime,
-    locationName: 'Čačalica — ogledna parcela', targetCoords: { x: 15, z: 12 },
+    locationName: 'Čačalica — ogledna parcela', targetCoords: { x: 68.5, z: 51.4 },
     description: 'Kupi fiktivno seme na Buvljaku, idi peške do parcele na Čačalici, posadi, zalij i uberi. Žetva se čuva u ruksaku; zatim je prodaj u željenom reonu za lokalni bonus.',
     dialogueText: 'Yashime: Nema više klikova sa druge strane grada. Moraš stići do leje, posaditi seme, zaliti ga i vratiti se po zreo plod. Voda ubrzava rast, a tržište biraš ti.',
     completionText: 'Prva žetva je evidentirana. Otključani su vrtovi Busija i Đurđevih rupa.',
@@ -209,7 +209,7 @@ export const INITIAL_TURF_ZONES: TurfZone[] = [
     controlPercentage: 85,
     dailyIncome: 2500,
     respectBonus: 90,
-    centerCoords: { x: 17, z: 13 },
+    centerCoords: { x: 66.6, z: 49.4 },
     color: '#06b6d4', // Cyan
     isContested: false,
   },
@@ -437,7 +437,7 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     type: 'plant_harvest',
     giver: GANG_CHARACTERS.yashime,
     locationName: 'Čačalica Šuma (Tajna Parcela)',
-    targetCoords: { x: 16, z: 11 },
+    targetCoords: { x: 68.5, z: 51.4 },
     description: 'Gospodin Yashime traži sveže obranu Cyber Pelcer biljku u punom cvetu. Posadi, zalij i uberi pre izlaska sunca!',
     dialogueText: 'Full Power, rodjo brate! Yashime na vezi. Naš Genetic Vault traži čist organski cyber soj. Odradi žetvu na Čačalici i postani suvlasnik Konglomerata!',
     completionText: 'Yashime lično overava tvoj trijumf! Dobio si titulu Glavnog Botaničkog Arhitekte Požarevca.',
@@ -489,7 +489,7 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     timeLimitSeconds: 900,
     checkpoints: [
       { label: 'Kupi Čačalica Repeater Key na Buvljaku', x: -18, z: -14 },
-      { label: 'Prođi pored repetitora na Čačalici', x: 26, z: 28 },
+      { label: 'Prođi pored repetitora na Čačalici', x: 66.6, z: 49.4 },
       { label: 'Prodaj isti ključ na Tabačkoj', x: 0, z: -10 },
     ],
     requiredTradeItemId: 'contraband_repeater_key',
@@ -572,7 +572,7 @@ export const INITIAL_DYNAMIC_MISSIONS: DynamicMission[] = [
     timeLimitSeconds: 840,
     checkpoints: [
       { label: 'Preuzmi registar na Hipodromu', x: -28, z: 26 },
-      { label: 'Prođi kontrolnu tačku na Čačalici', x: 26, z: 28 },
+      { label: 'Prođi kontrolnu tačku na Čačalici', x: 66.6, z: 49.4 },
       { label: 'Stigni do skrovišta na Trgu', x: 0, z: 0 },
     ],
     rewardCash: 5700,
@@ -700,7 +700,7 @@ export class DynamicMissionEngine {
       { name: 'Tabačka Čaršija', x: 0, z: -10 },
       { name: 'Gradski Park', x: -11, z: 7 },
       { name: 'Stari Korzo', x: 9, z: -4 },
-      { name: 'Čačalica', x: 26, z: 28 },
+      { name: 'Čačalica', x: 66.6, z: 49.4 },
       { name: 'Trg Radomira Vujovića', x: 0, z: 0 },
       { name: 'Etno Park Tulba', x: 12, z: 29 },
       { name: 'Hipodrom Požarevac', x: -28, z: 26 },
@@ -793,10 +793,10 @@ export class DynamicMissionEngine {
         requiredTimeOfDay = 'night';
       } else if (type === 'landmark_scout') {
         const landmark = loc.name === 'Etno Park Tulba'
-          ? { name: 'Etno Park Tulba', x: 12, z: 29, next: { name: 'Čačalica', x: 26, z: 28 } }
+          ? { name: 'Etno Park Tulba', x: 12, z: 29, next: { name: 'Čačalica', x: 66.6, z: 49.4 } }
           : loc.name === 'Vašarište'
           ? { name: 'Vašarište', x: -24, z: 12, next: { name: 'Stari Korzo', x: 9, z: -4 } }
-          : { name: 'Čačalica', x: 26, z: 28, next: { name: 'Gradski Park', x: -11, z: 7 } };
+          : { name: 'Čačalica', x: 66.6, z: 49.4, next: { name: 'Gradski Park', x: -11, z: 7 } };
         title = `Izviđanje landmarka: ${landmark.name} 🗺️`;
         description = `Obiđi novi 3D landmark ${landmark.name}, aktiviraj putokaz, zatim proveri sledeću tačku u ${landmark.next.name}.`;
         locationName = `${landmark.name} → ${landmark.next.name}`;
@@ -807,7 +807,7 @@ export class DynamicMissionEngine {
         ];
         timeLimitSeconds = 600;
       } else {
-        const plotCoords = plot?.coords ?? { x: 15, z: 12 };
+        const plotCoords = plot?.coords ?? { x: 68.5, z: 51.4 };
         title = `Čačalica: zrela berba pred svitanje 🌿`;
         description = 'Posadi i neguj biljku na parceli Čačalica, uberi zreo plod, pa odnesi uzorak na Tabačku. Berba i predaja su odvojeni ciljevi.';
         locationName = 'Čačalica → Tabačka Čaršija';

@@ -11,7 +11,7 @@ export interface OsmGroundElement {
 const ORIGIN = { lat: 44.6213, lon: 21.1878 };
 const EARTH_RADIUS_METERS = 6_378_137;
 const METERS_PER_GAME_UNIT = 16;
-const TERRAIN_SIZE = 78;
+const TERRAIN_SIZE = 160;
 const HALF_TERRAIN = TERRAIN_SIZE / 2;
 const TEXTURE_SIZE = 2048;
 const LAT_ORIGIN_RADIANS = (ORIGIN.lat * Math.PI) / 180;
@@ -87,7 +87,7 @@ function roadColor(highway: string): string {
 }
 
 /**
- * Renders the bundled OSM vectors into the game's 78 x 78-unit ground plane.
+ * Renders the bundled OSM vectors into the game's 160 x 160-unit ground plane.
  * This is an offline, original map style: it does not request or cache raster tiles.
  */
 export function createOpenStreetMapGroundTexture(elements: OsmGroundElement[]): THREE.CanvasTexture {

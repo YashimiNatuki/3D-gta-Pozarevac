@@ -342,7 +342,7 @@ export const INITIAL_PLANT_PLOTS: PlantPlot[] = [
     districtId: 'cacalica',
     locationName: 'Čačalica Šuma - Kvantna Leja 3',
     isUnlocked: true,
-    coords: { x: 15, z: 12 },
+    coords: { x: 68.5, z: 51.4 },
     plantedSeedId: null,
     seedName: null,
     growthProgress: 0,

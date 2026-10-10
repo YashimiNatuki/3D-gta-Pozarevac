@@ -46,6 +46,10 @@ import { AdaptiveRenderBudget, getInitialPixelRatio } from '../src/services/rend
 import { SpatialHash2D } from '../src/services/spatialHash';
 import { getCameraSafeDistance, getVehicleImpactContact } from '../src/services/collisionGeometry';
 import { GameDirector } from '../src/services/gameDirector';
+import { isValidPozarevacDem, samplePozarevacTerrainGrade, samplePozarevacTerrainHeight } from '../src/services/terrainHeightfield';
+import { findApproachingVehicleThreat } from '../src/services/pedestrianPanic';
+import { applyVehicleImpactConsequences } from '../src/services/vehicleImpactConsequences';
+import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
 const calmFrame = director.tick({ now: 0, playerSpeed: 0, wantedLevel: 0, nearbyVehicles: 0, nearbyCivilians: 0, weather: 'Rain' });
@@ -79,6 +83,40 @@ const fastCarImpact = getVehicleImpactContact({ x: 0, z: 2.5 }, {
 });
 assert.ok(fastCarImpact);
 assert.ok(fastCarImpact.directionZ > 0.9, 'knockback should point away from the car');
+
+const terrainFixture = {
+  source: 'test', sourceUrl: 'https://example.invalid', attribution: 'test', licenseUrl: 'https://example.invalid',
+  crs: 'EPSG:4326', verticalDatum: 'EGM2008', verticalUnit: 'meter', resolutionMeters: 30,
+  isDSM: true, origin: { lat: 44.62, lon: 21.18 }, metersPerGameUnit: 16, terrainSize: 20,
+  segments: 2, heightOffsetMeters: 80, heightStepMeters: 0.1,
+  valuesDecimeters: [0, 0, 0, 0, 100, 200, 0, 200, 400],
+};
+assert.equal(isValidPozarevacDem(terrainFixture), true);
+assert.equal(samplePozarevacTerrainHeight(terrainFixture, -10, -10), 0);
+assert.equal(samplePozarevacTerrainHeight(terrainFixture, 0, 0), 10 / 16);
+assert.ok(samplePozarevacTerrainGrade(terrainFixture, { x: 0, z: 0 }, { x: 10, z: 0 }) > 0);
+assert.equal(isValidPozarevacDem({ ...terrainFixture, valuesDecimeters: [0] }), false);
+
+const closingVehicle = { x: -7, z: 0, velocityX: 3, velocityZ: 0 };
+assert.ok(findApproachingVehicleThreat({ x: 0, z: 0 }, [closingVehicle]), 'a fast vehicle on collision course should trigger panic');
+assert.equal(findApproachingVehicleThreat({ x: 0, z: 0 }, [{ ...closingVehicle, velocityX: -3 }]), null, 'a vehicle moving away should not trigger panic');
+assert.equal(findApproachingVehicleThreat({ x: 0, z: 0 }, [{ ...closingVehicle, velocityX: 1.5 }]), null, 'slow traffic should not trigger panic');
+
+const impactStats: CharacterStats = {
+  level: 1, rankTitle: 'Novajlija', xp: 0, nextLevelXp: 100, respect: 0, cash: 500, stamina: 100,
+  maxStamina: 100, health: 100, maxHealth: 100, moveSpeed: 1, jumpPower: 1,
+  unlockedSkills: [], wantedLevel: 0, equippedGear: [],
+};
+const hardImpact = applyVehicleImpactConsequences(impactStats, 7);
+assert.equal(hardImpact.healthLost, 19);
+assert.equal(hardImpact.stats.health, 81);
+assert.equal(hardImpact.stats.cash, 326);
+assert.equal(hardImpact.wantedGained, 1);
+assert.equal(hardImpact.stats.wantedLevel, 1);
+const cappedImpact = applyVehicleImpactConsequences({ ...impactStats, health: 3, cash: 10, wantedLevel: 5 }, 30);
+assert.equal(cappedImpact.stats.health, 0, 'impact may down but never create negative health');
+assert.equal(cappedImpact.stats.cash, 0, 'medical cost cannot create negative cash');
+assert.equal(cappedImpact.stats.wantedLevel, 5, 'Wanted stays within its supported 0..5 range');
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',
@@ -169,6 +207,7 @@ assert.equal(findPozarevacDistrict({ x: 0, z: 0 })?.id, 'djura');
 assert.equal(findMarketDistrict({ x: -18, z: -14 }, 'buy')?.id, 'buvljak');
 assert.equal(findMarketDistrict({ x: 0, z: -10 }, 'sell')?.id, 'blok-c');
 assert.equal(findMarketDistrict({ x: -25, z: -4 }, 'sell')?.id, 'busije');
+assert.equal(findMarketDistrict({ x: 66.6, z: 49.4 }, 'sell')?.id, 'cacalica', 'the Cacalica market must follow the DEM-aligned real location');
 assert.equal(findMarketDistrict({ x: 0, z: 0 }, 'buy'), null, 'buying should stay at the Buvljak only');
 assert.equal(isSeedCompatibleWithDistrict('seed_tabacka_basil', 'blok-c'), true);
 assert.equal(isSeedCompatibleWithDistrict('seed_tabacka_basil', 'busije'), false);
@@ -179,6 +218,7 @@ assert.deepEqual(StreetEconomyEngine.calculateItemPrices(retroRadio, 'day', 'buv
 const oldDjuraPlot = INITIAL_PLANT_PLOTS.find((plot) => plot.id === 'plot_djura');
 const oldCacalicaPlot = INITIAL_PLANT_PLOTS.find((plot) => plot.id === 'plot_3');
 assert.ok(oldDjuraPlot && oldCacalicaPlot);
+assert.deepEqual(oldCacalicaPlot.coords, { x: 68.5, z: 51.4 }, 'Cacalica farm should sit on the real DEM hill rather than the old downtown stand-in');
 const migratedPlots = reconcilePlantPlots([{
   ...oldDjuraPlot,
   coords: { x: -1, z: 0 },
@@ -212,6 +252,7 @@ assert.deepEqual(harvestA, harvestB, 'harvest yield should stay deterministic af
 assert.equal(harvestA.itemId, 'produce_cacalica_tea');
 assert.ok(harvestA.quantity >= 2 && harvestA.quantity <= 3);
 assert.deepEqual(POZAREVAC_STORY_CAMPAIGN.map((mission) => mission.campaignChapter), [1, 2, 3, 4]);
+assert.deepEqual(INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_8')?.targetCoords, { x: 68.5, z: 51.4 });
 
 const canonicalTrade = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_9');
 assert.ok(canonicalTrade);
@@ -248,7 +289,7 @@ const tulbaEscape = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'd
 const hipodromEscape = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_13');
 assert.ok(cacalicaTrade && hipodromTrade && tulbaEscape && hipodromEscape);
 assert.equal(cacalicaTrade.requiredTradeItemId, 'contraband_repeater_key');
-assert.ok(cacalicaTrade.checkpoints?.some((checkpoint) => checkpoint.x === 26 && checkpoint.z === 28));
+assert.ok(cacalicaTrade.checkpoints?.some((checkpoint) => checkpoint.x === 66.6 && checkpoint.z === 49.4));
 assert.equal(hipodromTrade.requiredTradeItemId, 'contraband_odds_chip');
 assert.ok(hipodromTrade.checkpoints?.some((checkpoint) => checkpoint.x === -28 && checkpoint.z === 26));
 assert.equal(tulbaEscape.wantedLevelOnStart, 2);
@@ -291,7 +332,7 @@ for (const mission of generatedMissions) {
   }
   if (mission.type === 'plant_harvest') {
     assert.equal(mission.requiredTimeOfDay, 'dawn');
-    assert.deepEqual(mission.targetCoords, { x: 15, z: 12 });
+    assert.deepEqual(mission.targetCoords, { x: 68.5, z: 51.4 });
   }
   if (mission.type === 'landmark_scout') {
     assert.equal(mission.checkpoints?.length, 2);

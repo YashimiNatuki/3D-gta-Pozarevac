@@ -28,6 +28,7 @@ import { GameDirector } from '../services/gameDirector';
 import { buildPozarevacLandmarks } from '../services/pozarevacLandmarks';
 import { buildUrbanMicroLandmarks } from '../services/urbanMicroLandmarks';
 import { buildPlantPlotModels, disposePlantPlotModels } from '../services/plantPlotModels';
+import { isValidPozarevacDem, samplePozarevacTerrainHeight, type PozarevacDemHeightfield } from '../services/terrainHeightfield';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -57,6 +58,7 @@ export interface ThreeCanvasProps {
   isCctvActive?: boolean;
   cctvSystem?: CctvSystem;
   onDirectorSignal?: (signal: { id: string; type: string; intensity: number; reason: string }) => void;
+  onVehicleImpact?: (impact: { relativeSpeed: number; x: number; z: number }) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -87,6 +89,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   isCctvActive = false,
   cctvSystem,
   onDirectorSignal,
+  onVehicleImpact,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const cubeMeshRef = useRef<THREE.Mesh | null>(null);
@@ -108,6 +111,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [groundLayer, setGroundLayer] = useState<'osm' | 'classic'>('classic');
   const [osmMapReady, setOsmMapReady] = useState(false);
   const [osmMapFailed, setOsmMapFailed] = useState(false);
+  const [demStatus, setDemStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const terrainRef = useRef<PozarevacDemHeightfield | null>(null);
+  const onVehicleImpactRef = useRef(onVehicleImpact);
+  onVehicleImpactRef.current = onVehicleImpact;
   const terrainMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const osmGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const classicGroundTextureRef = useRef<THREE.CanvasTexture | null>(null);
@@ -221,9 +228,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 3D Spatial Audio Manager Factory: Bind localized ambient city noise loop relative to scene
     spatialSoundManager.createCityNoiseLoop('central_tabacka', { x: 0, y: 1.0, z: 0 }, 0.08);
 
-    // 4. CRISP HIGH-DEFINITION POŽAREVAC SATELLITE GROUND PLANE
-    const terrainSize = 78;
-    const groundGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, 64, 64);
+    // 4. DEM-DRAPED 2.56 km POŽAREVAC GROUND PLANE (30 m source spacing).
+    const terrainSize = 160;
+    const terrainSegments = 96;
+    const groundGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
     groundGeo.rotateX(-Math.PI / 2);
 
     const classicGroundTexture = createPozarevacStylizedGroundTexture();
@@ -259,6 +267,35 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         if (!groundRequestCancelled) {
           setOsmMapFailed(true);
           console.warn('OpenStreetMap ground layer unavailable; using the built-in stylized map.', error);
+        }
+      });
+
+    const getGroundHeight = (x: number, z: number) => terrainRef.current
+      ? samplePozarevacTerrainHeight(terrainRef.current, x, z)
+      : 0;
+    void fetch(`${import.meta.env.BASE_URL}data/pozarevac-dem-heightfield.json`, { signal: groundAbortController.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`DEM heightfield HTTP ${response.status}`);
+        return response.json() as Promise<unknown>;
+      })
+      .then((snapshot) => {
+        if (groundRequestCancelled) return;
+        if (!isValidPozarevacDem(snapshot)) throw new Error('DEM snapshot schema or grid dimensions are invalid');
+        terrainRef.current = snapshot;
+        controllerRef.current?.setTerrain(snapshot);
+        const position = groundGeo.getAttribute('position') as THREE.BufferAttribute;
+        for (let index = 0; index < position.count; index += 1) {
+          position.setY(index, getGroundHeight(position.getX(index), position.getZ(index)));
+        }
+        position.needsUpdate = true;
+        groundGeo.computeVertexNormals();
+        groundGeo.computeBoundingSphere();
+        setDemStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (!groundRequestCancelled) {
+          setDemStatus('failed');
+          console.warn('Copernicus DEM terrain unavailable; using a flat fallback plane.', error);
         }
       });
 
@@ -564,7 +601,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     trafficSystemRef.current = traffic;
 
     // 11. POLICE CRUISERS, STREET DOGS & SIDEWALK CITIZENS
-    const policeAndDogs = new PoliceAndDogsSystem(scene);
+    const policeAndDogs = new PoliceAndDogsSystem(scene, getGroundHeight);
     policeAndDogsRef.current = policeAndDogs;
     directorRef.current = new GameDirector({ seed: 7302026, cooldownMs: 18_000 });
 
@@ -652,6 +689,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       walkSpeed: 4.8 * (characterStats.moveSpeed || 1),
       runSpeed: 8.8 * (characterStats.moveSpeed || 1),
       jumpPower: 7.8 * (characterStats.jumpPower || 1),
+      terrain: terrainRef.current,
+      getGroundHeight,
+      onVehicleImpact: (impact) => onVehicleImpactRef.current?.(impact),
       getDynamicColliders: () => {
         return [
           ...traffic.vehicles.map((v) => ({
@@ -856,6 +896,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       // Update AI Traffic System (Slows down near player)
       traffic.setPursuitMode(wantedLevelRef.current > 0);
       traffic.update(delta, controller.position);
+      traffic.vehicles.forEach((vehicle) => {
+        vehicle.mesh.position.y = getGroundHeight(vehicle.mesh.position.x, vehicle.mesh.position.z) + 0.35;
+      });
 
       // HQ AI Director fuses live telemetry into deterministic, bounded gameplay signals.
       const activeMission = dynamicMissionsRef.current.find((mission) => mission.status === 'active');
@@ -871,7 +914,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       if (directorFrame?.signal) onDirectorSignal?.(directorFrame.signal);
 
       // Update Police Cruisers, Street Dogs & Sidewalk Citizens
-      policeAndDogs.update(delta, controller.position, wantedLevelRef.current, camera.position);
+      const pedestrianVehicleThreats = [
+        ...traffic.vehicles.map((vehicle) => ({
+          x: vehicle.mesh.position.x,
+          z: vehicle.mesh.position.z,
+          velocityX: vehicle.velocity.x,
+          velocityZ: vehicle.velocity.z,
+        })),
+      ];
+      policeAndDogs.update(delta, controller.position, wantedLevelRef.current, camera.position, pedestrianVehicleThreats, terrainRef.current);
 
       // Police Pursuit Visual Effect (Red & Blue atmospheric strobe across Požarevac)
       if (wantedLevelRef.current > 0) {
@@ -1106,6 +1157,20 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             className="rounded-md bg-slate-950/80 px-2 py-1 text-[9px] text-slate-200 underline decoration-emerald-400/70 underline-offset-2 shadow backdrop-blur"
           >
             © OpenStreetMap contributors · ODbL
+          </a>
+        )}
+        <span className={`rounded-md bg-slate-950/80 px-2 py-1 text-[9px] shadow backdrop-blur ${demStatus === 'ready' ? 'text-cyan-200' : demStatus === 'failed' ? 'text-amber-200' : 'text-slate-300'}`}>
+          {demStatus === 'ready' ? 'RELJEF: COPERNICUS GLO-30 · ČAČALICA +74 m' : demStatus === 'failed' ? 'RELJEF: RAVNA PODLOGA (DEM NEDOSTUPAN)' : 'RELJEF: UČITAVAM GLO-30…'}
+        </span>
+        {demStatus === 'ready' && (
+          <a
+            href="https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM"
+            target="_blank"
+            rel="noreferrer"
+            title="© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"
+            className="rounded-md bg-slate-950/80 px-2 py-1 text-[9px] text-slate-200 underline decoration-cyan-400/70 underline-offset-2 shadow backdrop-blur"
+          >
+            © DLR e.V. 2010–2014; © Airbus Defence and Space GmbH 2014–2018 · Copernicus/EU/ESA
           </a>
         )}
       </div>

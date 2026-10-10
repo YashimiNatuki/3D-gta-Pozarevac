@@ -48,8 +48,8 @@ export const initialQuests: Quest[] = [
     rewardXp: 450,
     rewardCash: 2500,
     completed: false,
-    description: 'Pokupi redak cyber pelcer za Yashimov Genetic Vault u severoistočnoj zoni.',
-    targetCoords: { x: 12, z: 10 },
+    description: 'Popni se na Spomen-park Čačalica i pokupi redak cyber pelcer na GPS-usklađenoj stazi do vidikovca.',
+    targetCoords: { x: 66.6, z: 49.4 },
   },
   {
     id: 'q3',

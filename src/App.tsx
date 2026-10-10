@@ -59,6 +59,7 @@ import {
   isPlantableSeed,
   isSeedCompatibleWithDistrict,
 } from './services/streetEconomy';
+import { applyVehicleImpactConsequences } from './services/vehicleImpactConsequences';
 
 const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
 const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer })));
@@ -519,6 +520,15 @@ export function App() {
     return null;
   };
 
+  const handleVehicleImpact = (impact: { relativeSpeed: number; x: number; z: number }) => {
+    const preview = applyVehicleImpactConsequences(characterStats, impact.relativeSpeed);
+    setCharacterStats((current) => applyVehicleImpactConsequences(current, impact.relativeSpeed).stats);
+    setMissionFeedback(
+      `Udar vozila: zdravlje −${preview.healthLost}, trošak lečenja −$${preview.cashLost}` +
+      (preview.wantedGained ? `, Wanted +${preview.wantedGained}.` : '.')
+    );
+  };
+
   const handleCompleteDynamicMission = (missionId: string, missionOverride?: DynamicMission) => {
     if (resolvingMissionIdsRef.current.has(missionId)) return;
     const mission = missionOverride?.id === missionId && missionOverride.status === 'active'
@@ -915,6 +925,7 @@ export function App() {
             quests={quests}
             dynamicMissions={dynamicMissions}
             onCompleteDynamicMission={handleCompleteDynamicMission}
+            onVehicleImpact={handleVehicleImpact}
             plantPlots={plantPlots}
             onInteractWithPlot={() => setIsFarmOpen(true)}
             onInteractWithPoi={handleInteractWithPoi}

@@ -4,6 +4,8 @@ import { CITY_BUILDING_BOXES, SceneObstacleBox } from './weatherManager';
 import { PhysicsEngine } from './physicsEngine';
 import { SpatialHash2D } from './spatialHash';
 import { getCameraSafeDistance, getVehicleImpactContact } from './collisionGeometry';
+import { samplePozarevacTerrainGrade } from './terrainHeightfield';
+import type { PozarevacDemHeightfield } from './terrainHeightfield';
 
 export interface DynamicCollider {
   x: number;
@@ -24,6 +26,9 @@ export interface ControllerOptions {
   runSpeed?: number;
   jumpPower?: number;
   getDynamicColliders?: () => DynamicCollider[];
+  getGroundHeight?: (x: number, z: number) => number;
+  terrain?: PozarevacDemHeightfield | null;
+  onVehicleImpact?: (impact: { relativeSpeed: number; x: number; z: number }) => void;
 }
 
 export class ThirdPersonController {
@@ -71,6 +76,9 @@ export class ThirdPersonController {
 
   // Collision System
   public getDynamicColliders: (() => DynamicCollider[]) | null = null;
+  private readonly getGroundHeight: (x: number, z: number) => number;
+  private terrain: PozarevacDemHeightfield | null;
+  private readonly onVehicleImpact?: ControllerOptions['onVehicleImpact'];
   public staticObstacles: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
   private staticObstacleHash = new SpatialHash2D<{ minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }>(8);
   private dynamicObstacleHash = new SpatialHash2D<{ minX: number; maxX: number; minZ: number; maxZ: number; isVehicle?: boolean }>(8);
@@ -116,6 +124,9 @@ export class ThirdPersonController {
     if (opts.runSpeed) this.runSpeed = opts.runSpeed;
     if (opts.jumpPower) this.jumpPower = opts.jumpPower;
     if (opts.getDynamicColliders) this.getDynamicColliders = opts.getDynamicColliders;
+    this.getGroundHeight = opts.getGroundHeight ?? (() => 0);
+    this.terrain = opts.terrain ?? null;
+    this.onVehicleImpact = opts.onVehicleImpact;
 
     // Initialize static Požarevac obstacle bounds (Buildings, Planters and visible Benches).
     this.staticObstacles = [
@@ -182,6 +193,10 @@ export class ThirdPersonController {
       this.targetDistance = 4.2;
       this.targetPitch = 0.08;
     }
+  }
+
+  public setTerrain(terrain: PozarevacDemHeightfield | null) {
+    this.terrain = terrain;
   }
 
   private onKeyDown(e: KeyboardEvent) {
@@ -276,7 +291,14 @@ export class ThirdPersonController {
     }
 
     // 3. Acceleration & Velocity Damping
-    const baseSpeed = isRunning ? this.runSpeed : this.walkSpeed;
+    const terrainGrade = this.terrain && hasInput
+      ? samplePozarevacTerrainGrade(this.terrain, this.position, {
+        x: this.position.x + moveDirection.x,
+        z: this.position.z + moveDirection.z,
+      })
+      : 0;
+    const gradeSpeedMultiplier = THREE.MathUtils.clamp(1 - terrainGrade * 0.9, 0.68, 1.22);
+    const baseSpeed = (isRunning ? this.runSpeed : this.walkSpeed) * gradeSpeedMultiplier;
     const currentMaxSpeed = baseSpeed * speedMultiplier;
 
     if (hasInput) {
@@ -410,11 +432,12 @@ export class ThirdPersonController {
         }
         audioDsp.playCrashImpact(this.position);
         this.lastCollisionSoundTime = Date.now();
+        this.onVehicleImpact?.({ relativeSpeed: contact.relativeSpeed, x: this.position.x, z: this.position.z });
       }
     }
 
     // Boundary clamping (within Požarevac play area)
-    const terrainBound = 35.0;
+    const terrainBound = 78.0;
     this.position.x = Math.max(-terrainBound, Math.min(terrainBound, this.position.x));
     this.position.z = Math.max(-terrainBound, Math.min(terrainBound, this.position.z));
 
@@ -428,16 +451,17 @@ export class ThirdPersonController {
     }
 
     // 6. Jump Physics & Gravity
+    const groundY = this.getGroundHeight(this.position.x, this.position.z);
     if (this.isJumping) {
       this.position.y += this.jumpVelocity * dt;
       this.jumpVelocity -= 18.5 * dt; // Gravity
-      if (this.position.y <= 0) {
-        this.position.y = 0;
+      if (this.position.y <= groundY) {
+        this.position.y = groundY;
         this.isJumping = false;
         this.jumpVelocity = 0;
       }
     } else {
-      this.position.y = 0;
+      this.position.y = groundY;
     }
 
     this.characterGroup.position.copy(this.position);

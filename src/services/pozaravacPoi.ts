@@ -228,7 +228,8 @@ export const POŽAREVAC_POIS: PožarevacPoi[] = [
     name: 'Čačalica Memorial Park',
     serbianName: 'Spomen Park Čačalica',
     gps: { lat: 44.61420, lon: 21.20120 },
-    coords: { x: 26, z: 28 },
+    // Derived from the verified WGS84 position; now sits on the DEM-mapped ridge.
+    coords: { x: 66.6, z: 49.4 },
     category: 'park',
     streetName: 'Brdo Čačalica',
     description: 'Istorijsko brdo iznad Požarevca, spomen-park borcima i vidikovac nad celom Braničevskom kotlinom.',

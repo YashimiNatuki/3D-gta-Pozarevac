@@ -3,6 +3,9 @@ import { audioDsp } from './audioDsp';
 import { geminiStoryEngine } from './geminiStoryEngine';
 import { audioLocalizationManager } from './audioLocalizationManager';
 import { SpatialHash2D } from './spatialHash';
+import { samplePozarevacTerrainGrade } from './terrainHeightfield';
+import type { PozarevacDemHeightfield } from './terrainHeightfield';
+import { findApproachingVehicleThreat, type PedestrianVehicleThreat } from './pedestrianPanic';
 
 type PoliceAIState = 'patrol' | 'investigate' | 'intercept' | 'pursuit' | 'arrest';
 type DogAIState = 'idle' | 'sniffing' | 'barking' | 'chasing' | 'pack-alert';
@@ -50,7 +53,11 @@ export interface Pedestrian {
   waypointIndex: number;
   speed: number;
   name: string;
-  mood: 'chill' | 'shocked' | 'hyped' | 'curious';
+  mood: 'chill' | 'shocked' | 'hyped' | 'curious' | 'panicking';
+  velocity: THREE.Vector3;
+  panicUntil: number;
+  panicBubbleUntil: number;
+  panicDirection: THREE.Vector3;
   overheadBubble: THREE.Mesh;
   bubbleCanvas: HTMLCanvasElement;
   bubbleTexture: THREE.CanvasTexture;
@@ -71,7 +78,7 @@ export class PoliceAndDogsSystem {
   private readonly awarenessHash = new SpatialHash2D<AIContact>(8);
   private readonly aiBounds = 0.65;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, private readonly getGroundHeight: (x: number, z: number) => number = () => 0) {
     this.scene = scene;
     this.spawnDogs();
     this.spawnPoliceCar(); // Base patrol cruiser
@@ -380,9 +387,9 @@ export class PoliceAndDogsSystem {
         gender: 'male' as const,
         color: 0x10b981,
         path: [
-          new THREE.Vector3(8, 0, -3),
-          new THREE.Vector3(16, 0, -3),
-          new THREE.Vector3(8, 0, -3),
+          new THREE.Vector3(62, 0, 48),
+          new THREE.Vector3(70, 0, 52),
+          new THREE.Vector3(62, 0, 48),
         ],
       },
       {
@@ -471,6 +478,10 @@ export class PoliceAndDogsSystem {
         lastMoodChangeTime: 0,
         lastSpokenTime: performance.now() + Math.random() * 9000,
         nextBanterDelayMs: 22000 + Math.random() * 12000,
+        velocity: new THREE.Vector3(),
+        panicUntil: 0,
+        panicBubbleUntil: 0,
+        panicDirection: new THREE.Vector3(),
       };
 
       this.renderPedestrianBubble(pedItem, '🕶️', 'Bratina!', '#0284c7');
@@ -619,7 +630,14 @@ export class PoliceAndDogsSystem {
   }
 
   // --- 4. UPDATE LOOP ---
-  public update(delta: number, playerPos: THREE.Vector3, wantedLevel: number, cameraPos: THREE.Vector3) {
+  public update(
+    delta: number,
+    playerPos: THREE.Vector3,
+    wantedLevel: number,
+    cameraPos: THREE.Vector3,
+    vehicleThreats: readonly PedestrianVehicleThreat[] = [],
+    terrain: PozarevacDemHeightfield | null = null,
+  ) {
     const now = performance.now();
 
     // Sync active hot pursuit police cruisers based on wantedLevel
@@ -641,7 +659,10 @@ export class PoliceAndDogsSystem {
 
     // 1. Rebuild local awareness grid, then run dog perception/pack AI.
     this.rebuildAwarenessHash();
-    this.dogs.forEach((dog, idx) => this.updateDogAI(dog, idx, delta, now, playerPos, cameraPos, wantedLevel));
+    this.dogs.forEach((dog, idx) => {
+      this.updateDogAI(dog, idx, delta, now, playerPos, cameraPos, wantedLevel);
+      dog.group.position.y = this.getGroundHeight(dog.group.position.x, dog.group.position.z);
+    });
     // 2. Update Flashing Sirens State
     this.sirenFlashTimer += delta;
     if (this.sirenFlashTimer > 0.16) {
@@ -656,6 +677,7 @@ export class PoliceAndDogsSystem {
       pCar.lightBarRedMesh.visible = wantedLevel === 0 || this.redActive;
       pCar.lightBarBlueMesh.visible = wantedLevel === 0 || !this.redActive;
       this.updatePoliceAI(pCar, index, delta, now, playerPos, wantedLevel, false);
+      pCar.group.position.y = this.getGroundHeight(pCar.group.position.x, pCar.group.position.z) + 0.35;
     });
     this.pursuitCruisers.forEach((pCruiser, index) => {
       pCruiser.sirenRed.intensity = this.redActive ? 12.0 : 0;
@@ -663,26 +685,75 @@ export class PoliceAndDogsSystem {
       pCruiser.lightBarRedMesh.visible = this.redActive;
       pCruiser.lightBarBlueMesh.visible = !this.redActive;
       this.updatePoliceAI(pCruiser, index, delta, now, playerPos, wantedLevel, true);
+      pCruiser.group.position.y = this.getGroundHeight(pCruiser.group.position.x, pCruiser.group.position.z) + 0.35;
     });
     // 3. Update Pedestrians
     this.pedestrians.forEach((ped, pIdx) => {
-      const target = ped.path[(ped.waypointIndex + 1) % ped.path.length];
-      const dir = new THREE.Vector3().subVectors(target, ped.group.position);
-      dir.y = 0;
-      if (dir.length() < 0.5) {
+      const nearestThreat = findApproachingVehicleThreat(ped.group.position, vehicleThreats);
+
+      if (nearestThreat && now >= ped.panicUntil) {
+        ped.panicUntil = now + 2800 + Math.random() * 900;
+        ped.panicBubbleUntil = now + 1800;
+        ped.mood = 'panicking';
+        ped.panicDirection.set(ped.group.position.x - nearestThreat.x, 0, ped.group.position.z - nearestThreat.z);
+        if (ped.panicDirection.lengthSq() < 0.01) ped.panicDirection.set(-Math.sign(nearestThreat.x - ped.group.position.x || 1), 0, -Math.sign(nearestThreat.z - ped.group.position.z || 1));
+        ped.panicDirection.normalize();
+        ped.lastMoodChangeTime = now;
+        this.renderPedestrianBubble(ped, '⚠', 'PAZI AUTO!', '#ef4444');
+        audioLocalizationManager.playLocalizedSerbian(
+          ped.gender === 'female' ? 'Pazi, auto! Skloni se sa puta!' : 'Pazi, auto ti prilazi! Beži sa puta!',
+          { x: ped.group.position.x, y: ped.group.position.y + 1.3, z: ped.group.position.z },
+          { gender: ped.gender, emotion: 'shout', gain: 0.7 },
+        );
+      }
+      if (now >= ped.panicUntil && ped.mood === 'panicking') ped.mood = 'chill';
+
+      const target = ped.mood === 'panicking'
+        ? new THREE.Vector3(
+          THREE.MathUtils.clamp(ped.group.position.x + ped.panicDirection.x * 10, -76, 76),
+          0,
+          THREE.MathUtils.clamp(ped.group.position.z + ped.panicDirection.z * 10, -76, 76),
+        )
+        : ped.path[(ped.waypointIndex + 1) % ped.path.length];
+      const toTarget = new THREE.Vector3(target.x - ped.group.position.x, 0, target.z - ped.group.position.z);
+      if (ped.mood !== 'panicking' && toTarget.length() < 0.5) {
         ped.waypointIndex = (ped.waypointIndex + 1) % ped.path.length;
       } else {
-        dir.normalize();
-        ped.group.position.addScaledVector(dir, ped.speed * delta);
-        ped.group.rotation.y = THREE.MathUtils.lerp(ped.group.rotation.y, Math.atan2(dir.x, dir.z), 0.1);
+        if (toTarget.lengthSq() > 1e-4) toTarget.normalize();
+        const separation = new THREE.Vector3();
+        for (const other of this.pedestrians) {
+          if (other === ped) continue;
+          const dx = ped.group.position.x - other.group.position.x;
+          const dz = ped.group.position.z - other.group.position.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 0.001 && d2 < 1.44) separation.add(new THREE.Vector3(dx, 0, dz).multiplyScalar(0.12 / d2));
+        }
+        toTarget.add(separation).normalize();
+        const speed = ped.mood === 'panicking' ? 5.2 : ped.speed;
+        const grade = terrain ? samplePozarevacTerrainGrade(terrain, ped.group.position, {
+          x: ped.group.position.x + toTarget.x,
+          z: ped.group.position.z + toTarget.z,
+        }) : 0;
+        const slopeScale = THREE.MathUtils.clamp(1 - grade * 0.9, 0.68, 1.22);
+        const desiredX = toTarget.x * speed * slopeScale;
+        const desiredZ = toTarget.z * speed * slopeScale;
+        ped.velocity.x = THREE.MathUtils.damp(ped.velocity.x, desiredX, ped.mood === 'panicking' ? 8 : 5, Math.min(delta, 0.1));
+        ped.velocity.z = THREE.MathUtils.damp(ped.velocity.z, desiredZ, ped.mood === 'panicking' ? 8 : 5, Math.min(delta, 0.1));
+        ped.group.position.x += ped.velocity.x * delta;
+        ped.group.position.z += ped.velocity.z * delta;
+        const ground = this.getGroundHeight(ped.group.position.x, ped.group.position.z);
+        ped.group.position.y = ground;
+        if (Math.hypot(ped.velocity.x, ped.velocity.z) > 0.1) {
+          ped.group.rotation.y = THREE.MathUtils.lerp(ped.group.rotation.y, Math.atan2(ped.velocity.x, ped.velocity.z), 0.16);
+        }
       }
 
-      const legSwing = Math.sin(now * 0.007 + pIdx) * 0.4;
+      const legSwing = Math.sin(now * (ped.mood === 'panicking' ? 0.018 : 0.007) + pIdx) * (ped.mood === 'panicking' ? 0.75 : 0.4);
       ped.legs[0].rotation.x = legSwing;
       ped.legs[1].rotation.x = -legSwing;
 
-      // Do not display billboard popup windows for banter/shouts
-      ped.overheadBubble.visible = false;
+      ped.overheadBubble.visible = ped.mood === 'panicking' && now < ped.panicBubbleUntil;
+      if (ped.overheadBubble.visible) ped.overheadBubble.lookAt(cameraPos);
 
       // Proximity & collision-based NPC interaction with REAL VOICE (no UI popups!)
       const distToPlayer = ped.group.position.distanceTo(playerPos);
