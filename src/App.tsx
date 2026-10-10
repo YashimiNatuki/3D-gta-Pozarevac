@@ -60,6 +60,7 @@ import {
   isSeedCompatibleWithDistrict,
 } from './services/streetEconomy';
 import { applyVehicleImpactConsequences } from './services/vehicleImpactConsequences';
+import { markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from './services/cinematicIntroService';
 
 const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
 const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer })));
@@ -84,6 +85,7 @@ const ThreeCanvas = React.lazy(() =>
 
 export function App() {
   const [initialGameProgress] = useState(() => readGameProgress());
+  const [hasCloudGameSave, setHasCloudGameSave] = useState(false);
   const [progressHydrated, setProgressHydrated] = useState(false);
   const [localProgressStatus, setLocalProgressStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [cloudProgressStatus, setCloudProgressStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -165,8 +167,9 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
-  const [isIntroOpen, setIsIntroOpen] = useState(true);
+  const [isIntroOpen, setIsIntroOpen] = useState(false);
   const [hasEnteredGame, setHasEnteredGame] = useState(false);
+  const [prioritizeBundledIntro, setPrioritizeBundledIntro] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
     try {
       const saved = localStorage.getItem('gta_pozaravac_intro_video');
@@ -263,6 +266,7 @@ export function App() {
     void loadFirestoreCapability().then(({ loadPlayerProgressFromFirestore }) => loadPlayerProgressFromFirestore(currentUser.uid))
       .then((cloudSave) => {
         if (cancelled || !cloudSave) return;
+        setHasCloudGameSave(true);
         setCharacterStats(cloudSave.stats);
         if (cloudSave.turfZones?.length) setTurfZones(reconcileTurfZones(cloudSave.turfZones));
         if (isGameProgressData(cloudSave.gameProgress)) {
@@ -287,6 +291,20 @@ export function App() {
 
     return () => { cancelled = true; };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!progressHydrated) return;
+    const shouldPlayOriginalIntro = shouldAutoPlayCinematicIntro(
+      Boolean(initialGameProgress) || hasCloudGameSave,
+    );
+    setPrioritizeBundledIntro(shouldPlayOriginalIntro);
+    if (shouldPlayOriginalIntro) {
+      setIsIntroOpen(true);
+      return;
+    }
+    setIsIntroOpen(false);
+    setHasEnteredGame(true);
+  }, [progressHydrated, initialGameProgress, hasCloudGameSave]);
 
   useEffect(() => {
     if (!progressHydrated) return;
@@ -1040,6 +1058,7 @@ export function App() {
         onClose={() => setIsVeoOpen(false)}
         onSetAsIntroVideo={(url) => {
           setIntroVideoUrl(url);
+          setPrioritizeBundledIntro(false);
           setIsIntroOpen(true);
         }}
       />
@@ -1048,11 +1067,16 @@ export function App() {
       <GameIntroVideoModal
         isOpen={isIntroOpen}
         onClose={() => {
+          markCinematicIntroSeen();
           setHasEnteredGame(true);
           setIsIntroOpen(false);
+          setPrioritizeBundledIntro(false);
         }}
-        introVideoUrl={introVideoUrl}
-        onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
+        introVideoUrl={prioritizeBundledIntro ? null : introVideoUrl}
+        onUpdateIntroVideo={(url) => {
+          setIntroVideoUrl(url);
+          setPrioritizeBundledIntro(false);
+        }}
       />
 
       {/* 3D Character Creator & Customizer Modal (Kreiraj Lika) */}

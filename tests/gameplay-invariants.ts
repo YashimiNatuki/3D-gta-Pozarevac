@@ -50,6 +50,7 @@ import { isValidPozarevacDem, samplePozarevacTerrainGrade, samplePozarevacTerrai
 import { findApproachingVehicleThreat } from '../src/services/pedestrianPanic';
 import { applyVehicleImpactConsequences } from '../src/services/vehicleImpactConsequences';
 import { terrainPixelToSourceCoordinate } from '../src/services/terrainImagery';
+import { hasStoredGameSaveData, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from '../src/services/cinematicIntroService';
 import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -417,6 +418,19 @@ const memoryStorage: KeyValueStorage = {
   getItem: (key) => memory.get(key) ?? null,
   setItem: (key, value) => { memory.set(key, value); },
 };
+const introMemory = new Map<string, string>();
+const introStorage: KeyValueStorage = {
+  getItem: (key) => introMemory.get(key) ?? null,
+  setItem: (key, value) => { introMemory.set(key, value); },
+};
+assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), true, 'a new player should see the original intro');
+assert.equal(markCinematicIntroSeen(introStorage), true);
+assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), false, 'a dismissed intro should not auto-play again');
+introMemory.clear();
+introStorage.setItem('pozaravac_player_save', '{"cash":2500}');
+assert.equal(hasStoredGameSaveData(introStorage), true);
+assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), false, 'legacy save data should suppress the first-run intro');
+
 const sampleProgress: GameProgressData = {
   score: 2400,
   energyLevel: 72,
