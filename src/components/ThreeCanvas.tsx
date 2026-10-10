@@ -31,6 +31,9 @@ import { buildPlantPlotModels, disposePlantPlotModels } from '../services/plantP
 import { isValidPozarevacDem, samplePozarevacTerrainHeight, type PozarevacDemHeightfield } from '../services/terrainHeightfield';
 import { importTerrainGeoTiff } from '../services/terrainImagery';
 import { parseLocalCharacterGlb } from '../services/gltfCharacter';
+import { ProceduralFootIkSolver } from '../services/proceduralFootIk';
+import { GlobalEnvironmentFx } from '../services/globalEnvironmentFx';
+import { CinematicCameraDynamics } from '../services/cinematicCameraDynamics';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -103,6 +106,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
+  const environmentFxRef = useRef<GlobalEnvironmentFx | null>(null);
   const directorRef = useRef<GameDirector | null>(null);
   const plantPlotsRef = useRef<PlantPlot[]>(plantPlots);
   plantPlotsRef.current = plantPlots;
@@ -256,6 +260,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       metalness: 0.05,
     });
     terrainMaterialRef.current = terrainMat;
+    const environmentFx = new GlobalEnvironmentFx();
+    environmentFxRef.current = environmentFx;
+    environmentFx.registerMaterial(terrainMat);
     weatherMgr.setTerrainMaterial(terrainMat);
 
     // Load the bundled OSM snapshot from this app origin; no external map tiles or API keys.
@@ -322,6 +329,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const sidewalksGroup = new THREE.Group();
     const curbMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7, metalness: 0.1 });
     const sidewalkPavingMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.85, metalness: 0.05 });
+    environmentFx.registerMaterial(curbMat);
+    environmentFx.registerMaterial(sidewalkPavingMat);
 
     const westSidewalk = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.18, 68), sidewalkPavingMat);
     westSidewalk.position.set(-4.5, 0.09, 0);
@@ -360,12 +369,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       roughness: 0.52,
       metalness: 0.08,
     });
+    environmentFx.registerMaterial(litWindowMat);
+    environmentFx.registerMaterial(darkWindowMat);
     const windowDummy = new THREE.Object3D();
 
     const createCityBuilding = (x: number, z: number, w: number, h: number, d: number, neonTitle?: string, neonColor?: number) => {
       const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
       const bGeo = new THREE.BoxGeometry(w, h, d);
       const bMat = new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.8, metalness: 0.1 });
+      environmentFx.registerMaterial(bMat);
       const building = new THREE.Mesh(bGeo, bMat);
       building.position.set(x, h / 2, z);
       building.castShadow = true;
@@ -694,7 +706,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     scene.add(characterRig.rootGroup);
 
-    // 15. INITIALIZE SMOOTH THIRD-PERSON CONTROLLER
+    // 15. INITIALIZE SMOOTH THIRD-PERSON CONTROLLER + CINEMATIC DYNAMICS
+    const cameraDynamics = new CinematicCameraDynamics(camera, {
+      baseFov: 50,
+      maxFov: 82,
+      speedForMaxFov: 8.8,
+    });
     const controller = new ThirdPersonController({
       camera,
       characterGroup: characterRig.rootGroup,
@@ -705,7 +722,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       jumpPower: 7.8 * (characterStats.jumpPower || 1),
       terrain: terrainRef.current,
       getGroundHeight,
-      onVehicleImpact: (impact) => onVehicleImpactRef.current?.(impact),
+      onVehicleImpact: (impact) => {
+        cameraDynamics.triggerShake(Math.min(0.28, impact.relativeSpeed * 0.018), 0.24);
+        onVehicleImpactRef.current?.(impact);
+      },
       getDynamicColliders: () => {
         return [
           ...traffic.vehicles.map((v) => ({
@@ -730,6 +750,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     controller.targetPitch = 0.22;
     controller.setMode(cameraMode);
     controllerRef.current = controller;
+    const footIk = new ProceduralFootIkSolver({
+      root: characterRig.rootGroup,
+      leftFoot: characterRig.leftSneaker,
+      rightFoot: characterRig.rightSneaker,
+      groundObjects: [groundMesh, sidewalksGroup],
+      raycastHeight: 0.8,
+      raycastDistance: 1.8,
+      smoothSpeed: 15,
+      weight: 0.92,
+    });
 
     // 16. Interactive Quantum Cube and Genetic Sphere Monuments
     const cubeGeometry = new THREE.BoxGeometry(2.0, 2.0, 2.0);
@@ -856,12 +886,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       } else {
         // Normal ThirdPersonController (WASD, Orbit, Ground clamp)
-        if (camera.fov !== 50) {
-          camera.fov = 50;
-          camera.updateProjectionMatrix();
-        }
         controller.update(delta);
+        cameraDynamics.update(delta, controller.velocity.length(), controller.activeMode !== 'topDown');
       }
+      if (isCctvActiveRef.current) cameraDynamics.clearShake();
 
       // Update Character Limb Animations (walk/run cycle with proper jump airtime)
       const isJumping = !controller.isGrounded;
@@ -871,6 +899,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         controller.isSprinting,
         isJumping
       );
+      footIk.update(delta, controller.isGrounded);
 
       // Interactive Footstep Puddle Splashes in wet weather
       if (
@@ -947,6 +976,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
       // Update Weather & Atmosphere
       weatherMgr.update(delta, controller.position);
+      environmentFx.update(delta);
 
       // Notify parent about character coordinates for Požarevac GPS radar
       if (onUpdateCharacterPosition && Math.floor(elapsedTime * 10) % 2 === 0) {
@@ -1041,6 +1071,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       traffic.dispose();
       policeAndDogs.dispose();
       weatherMgr.dispose();
+      environmentFx.dispose();
+      environmentFxRef.current = null;
       groundRequestCancelled = true;
       groundAbortController.abort();
       terrainMaterialRef.current?.dispose();
@@ -1086,6 +1118,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     if (weatherManagerRef.current) {
       weatherManagerRef.current.setWeather(weather, true);
     }
+    environmentFxRef.current?.setWeatherState(weather);
   }, [weather]);
 
   // Update Camera Mode dynamically on controller

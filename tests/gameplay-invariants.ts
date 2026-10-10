@@ -51,6 +51,12 @@ import { findApproachingVehicleThreat } from '../src/services/pedestrianPanic';
 import { applyVehicleImpactConsequences } from '../src/services/vehicleImpactConsequences';
 import { terrainPixelToSourceCoordinate } from '../src/services/terrainImagery';
 import { captureIntroStorageSnapshot, hasStoredGameSaveData, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from '../src/services/cinematicIntroService';
+import { clampFootIkWeight, smoothFootTarget } from '../src/services/proceduralFootIk';
+import { dampEnvironmentValue, getEnvironmentFxConfig } from '../src/services/globalEnvironmentFx';
+import { computeSpeedFov, decayShake } from '../src/services/cinematicCameraDynamics';
+import { mapLiveWeatherToState, normalizeLiveWeather } from '../src/services/liveWeatherSync';
+import { buildNpcSystemPrompt, parseNpcActionPayload } from '../src/services/npcPrompt';
+import { TEXTURE_PROMPTS } from '../src/services/texturePromptCatalog';
 import type { CharacterStats } from '../src/services/characterProgress';
 
 const director = new GameDirector({ seed: 42, cooldownMs: 1_000 });
@@ -85,6 +91,21 @@ const fastCarImpact = getVehicleImpactContact({ x: 0, z: 2.5 }, {
 });
 assert.ok(fastCarImpact);
 assert.ok(fastCarImpact.directionZ > 0.9, 'knockback should point away from the car');
+
+assert.equal(clampFootIkWeight(-1), 0);
+assert.equal(clampFootIkWeight(2), 1);
+assert.ok(smoothFootTarget(0, 1, 0.016, 15) > 0, 'foot target should converge toward terrain');
+assert.equal(getEnvironmentFxConfig('Cyber-Storm').wetness, 0.92);
+assert.ok(dampEnvironmentValue(0, 1, 0.016) > 0 && dampEnvironmentValue(0, 1, 0.016) < 1);
+assert.equal(computeSpeedFov(100, 50, 82, 8.8), 82);
+assert.ok(decayShake(1, 0.016) < 1, 'camera shake should decay');
+assert.equal(mapLiveWeatherToState({ weather: [{ main: 'Thunderstorm' }] }), 'Cyber-Storm');
+assert.equal(mapLiveWeatherToState({ weather: [{ main: 'Rain' }] }), 'Rain');
+assert.equal(normalizeLiveWeather({ weather: [{ main: 'Clear', description: 'clear sky' }], main: { temp: 17, humidity: 65 } }).temperatureC, 17);
+assert.match(buildNpcSystemPrompt({ name: 'Sale', inGameTime: 'noć', weather: 'Rain', location: 'Tabačke čaršije' }), /najviše 2 rečenice/);
+assert.deepEqual(parseNpcActionPayload('{"dialogue":"Stani, brate.","Action":"PointFinger"}'), { dialogue: 'Stani, brate.', action: 'PointFinger' });
+assert.equal(parseNpcActionPayload('{"dialogue":"x","Action":"ExecuteCode"}'), null);
+assert.match(TEXTURE_PROMPTS.wornNeonAsphalt, /tileable/i);
 
 const terrainFixture = {
   source: 'test', sourceUrl: 'https://example.invalid', attribution: 'test', licenseUrl: 'https://example.invalid',
