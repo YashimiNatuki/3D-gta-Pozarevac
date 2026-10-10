@@ -531,7 +531,7 @@ export class PoliceAndDogsSystem {
     const policeNearby = nearby.some((contact) => contact.kind !== 'dog');
     const threatRange = wantedLevel > 0 ? 7.5 : 4.2;
     const canSeePlayer = playerDistance < threatRange;
-    if (canSeePlayer) dog.targetMemory.copy(playerPos);
+    if (canSeePlayer || (wantedLevel > 0 && policeNearby && playerDistance < 12)) dog.targetMemory.copy(playerPos);
     if (canSeePlayer || (wantedLevel > 0 && policeNearby && playerDistance < 12)) {
       dog.alertUntil = now + (wantedLevel > 0 ? 5000 : 2500);
       dog.state = wantedLevel > 0 && policeNearby ? 'pack-alert' : playerDistance < 2 ? 'barking' : 'chasing';
@@ -601,7 +601,8 @@ export class PoliceAndDogsSystem {
   }
 
   // --- 4. UPDATE LOOP ---
-  public update(delta: number, playerPos: THREE.Vector3, wantedLevel: number, cameraPos: THREE.Vector3) {
+  public update(rawDelta: number, playerPos: THREE.Vector3, wantedLevel: number, cameraPos: THREE.Vector3) {
+    const delta = Math.min(rawDelta, 0.05);
     const now = performance.now();
 
     // Sync active hot pursuit police cruisers based on wantedLevel
@@ -611,13 +612,23 @@ export class PoliceAndDogsSystem {
     if (wantedLevel >= 3 && now - this.lastSirenSoundTime > 8500) {
       // Find closest pursuit cruiser distance
       let minDist = 999;
+      let nearestPosX = 0;
+      let nearestPosY = 0;
+      let nearestPosZ = 0;
+      let hasNearestCruiser = false;
       this.pursuitCruisers.forEach((c) => {
         const d = c.group.position.distanceTo(playerPos);
-        if (d < minDist) minDist = d;
+        if (d < minDist) {
+          minDist = d;
+          nearestPosX = c.group.position.x;
+          nearestPosY = c.group.position.y;
+          nearestPosZ = c.group.position.z;
+          hasNearestCruiser = true;
+        }
       });
-      if (minDist < 35) {
+      if (minDist < 35 && hasNearestCruiser) {
         this.lastSirenSoundTime = now;
-        audioDsp.playPoliceSirenSound(minDist);
+        audioDsp.playPoliceSirenSound(nearestPosX, nearestPosY, nearestPosZ);
       }
     }
 

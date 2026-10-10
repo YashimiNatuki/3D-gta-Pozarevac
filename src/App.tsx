@@ -935,6 +935,7 @@ export function App() {
 
       <React.Suspense fallback={null}>
       {/* Google Drive Persistence Modal */}
+      {isDriveOpen && (
       <DriveSyncModal
         isOpen={isDriveOpen}
         onClose={() => setIsDriveOpen(false)}
@@ -946,23 +947,29 @@ export function App() {
         currentSaveData={currentSaveData}
         onLoadSaveData={handleLoadSaveData}
       />
+      )}
 
       {/* Multi-turn Chatbot (Search, Maps & POI Quest Dialogue) Drawer */}
+      {isChatOpen && (
       <AiChatDrawer
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
         activePoiDialogue={activePoiDialogue}
       />
+      )}
 
       {/* Y!App Graveyard & Genetic Vault Inspector Modal */}
+      {isVaultOpen && (
       <GraveyardVaultModal
         isOpen={isVaultOpen}
         onClose={() => setIsVaultOpen(false)}
         entities={vaultEntities}
         onUpdateEntities={setVaultEntities}
       />
+      )}
 
       {/* Veo 3 Video Studio Modal */}
+      {isVeoOpen && (
       <VeoStudioModal
         isOpen={isVeoOpen}
         onClose={() => setIsVeoOpen(false)}
@@ -971,8 +978,10 @@ export function App() {
           setIsIntroOpen(true);
         }}
       />
+      )}
 
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
+      {isIntroOpen && (
       <GameIntroVideoModal
         isOpen={isIntroOpen}
         onClose={() => {
@@ -982,8 +991,10 @@ export function App() {
         introVideoUrl={introVideoUrl}
         onUpdateIntroVideo={(url) => setIntroVideoUrl(url)}
       />
+      )}
 
       {/* 3D Character Creator & Customizer Modal (Kreiraj Lika) */}
+      {isCreatorOpen && (
       <CharacterCreatorModal
         isOpen={isCreatorOpen}
         onClose={() => setIsCreatorOpen(false)}
@@ -992,8 +1003,10 @@ export function App() {
         onSelectPresetOutfit={setOutfit}
         onFocusCloseUpCamera={() => setCameraMode('closeUp')}
       />
+      )}
 
       {/* Bratina Phone OS Modal: SMS Inbox & Dnevne Misije */}
+      {isPhoneOpen && (
       <BratinaPhoneModal
         isOpen={isPhoneOpen}
         onClose={() => setIsPhoneOpen(false)}
@@ -1005,8 +1018,10 @@ export function App() {
         timeOfDay={timeOfDay}
         wantedLevel={characterStats.wantedLevel || 0}
       />
+      )}
 
       {/* Ulični Buvljak & Trgovina Robom (Buy/Sell) Modal */}
+      {isMarketOpen && (
       <StreetMarketModal
         isOpen={isMarketOpen}
         onClose={() => setIsMarketOpen(false)}
@@ -1019,8 +1034,10 @@ export function App() {
         onBuyItem={handleBuyItem}
         onSellItem={handleSellItem}
       />
+      )}
 
       {/* Botanička Plantaža & Žetva (Sadnja semena & Zalivanje) Modal */}
+      {isFarmOpen && (
       <BotanicalFarmModal
         isOpen={isFarmOpen}
         onClose={() => setIsFarmOpen(false)}
@@ -1030,8 +1047,10 @@ export function App() {
         onWaterPlot={handleWaterPlot}
         onHarvestPlot={handleHarvestPlot}
       />
+      )}
 
       {/* Rat za Reone: Požarevac Underground Modal */}
+      {isTurfWarOpen && (
       <TurfWarModal
         isOpen={isTurfWarOpen}
         onClose={() => setIsTurfWarOpen(false)}
@@ -1074,8 +1093,10 @@ export function App() {
         playerCash={characterStats.cash}
         playerRespect={characterStats.respect}
       />
+      )}
 
       {/* Google Docs Izveštaj & Hronika Modal */}
+      {isDocsOpen && (
       <GoogleDocsModal
         isOpen={isDocsOpen}
         onClose={() => setIsDocsOpen(false)}
@@ -1083,8 +1104,10 @@ export function App() {
         turfZones={turfZones}
         userEmail={currentUser?.email}
       />
+      )}
 
       {/* Google Maps GPS Požarevac Satelit & Znamenitosti Modal */}
+      {isMapsOpen && (
       <GoogleMapsModal
         isOpen={isMapsOpen}
         onClose={() => setIsMapsOpen(false)}
@@ -1093,8 +1116,10 @@ export function App() {
           setPlayerPos({ x: poi.coords.x, z: poi.coords.z, heading: playerPos.heading });
         }}
       />
+      )}
 
       {/* Google Picker v10.0 Modal */}
+      {isPickerOpen && (
       <GooglePickerModal
         isOpen={isPickerOpen}
         onClose={() => setIsPickerOpen(false)}
@@ -1102,12 +1127,15 @@ export function App() {
           console.log('[Google Picker File Selected]', file);
         }}
       />
+      )}
 
       {/* XP Master Codex v10.0 Modal (10 Master Algoritama) */}
+      {isMasterPlanOpen && (
       <MasterPlanModal
         isOpen={isMasterPlanOpen}
         onClose={() => setIsMasterPlanOpen(false)}
       />
+      )}
 
       </React.Suspense>
 

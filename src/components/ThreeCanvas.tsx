@@ -91,6 +91,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const policeAndDogsRef = useRef<PoliceAndDogsSystem | null>(null);
   const characterRigRef = useRef<CharacterRig | null>(null);
   const controllerRef = useRef<ThirdPersonController | null>(null);
+  const cameraDirectionRef = useRef(new THREE.Vector3());
+  const nextPositionNotifyRef = useRef(0);
+  const bloomEnabledRef = useRef(bloomEnabled);
+  bloomEnabledRef.current = bloomEnabled;
+  const autoSpinCubeRef = useRef(autoSpinCube);
+  autoSpinCubeRef.current = autoSpinCube;
 
   // Keep latest props in refs for animation loop
   const isCctvActiveRef = useRef<boolean>(isCctvActive);
@@ -144,6 +150,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     // 2. Post-Processing: EffectComposer & UnrealBloomPass
     const composer = new EffectComposer(renderer);
+    composer.setPixelRatio(renderBudget.pixelRatio);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
@@ -170,8 +177,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const sunLight = new THREE.DirectionalLight(0xfff7ed, 1.15);
     sunLight.position.set(28, 48, 25);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 180;
     sunLight.shadow.camera.left = -38;
@@ -692,8 +699,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      composer.setPixelRatio(renderBudget.pixelRatio);
       composer.setSize(w, h);
-      if (bloomPassRef.current) bloomPassRef.current.resolution.set(w, h);
     };
     window.addEventListener('resize', onResize);
 
@@ -765,7 +772,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       });
 
       // 3D Spatial Audio Listener tracking (PannerNode coordinates relative to camera)
-      const cameraDir = new THREE.Vector3();
+      const cameraDir = cameraDirectionRef.current;
       camera.getWorldDirection(cameraDir);
       audioDsp.updateAudioListener(
         camera.position.x,
@@ -798,7 +805,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       weatherMgr.update(delta, controller.position);
 
       // Notify parent about character coordinates for Požarevac GPS radar
-      if (onUpdateCharacterPosition && Math.floor(elapsedTime * 10) % 2 === 0) {
+      if (onUpdateCharacterPosition && elapsedTime >= nextPositionNotifyRef.current) {
+        nextPositionNotifyRef.current = elapsedTime + 0.1;
         onUpdateCharacterPosition({
           x: controller.position.x,
           z: controller.position.z,
@@ -853,16 +861,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       // Monument animations
       sphereMesh.position.y = 1.8 + Math.sin(elapsedTime * 2.2) * 0.25;
 
-      if (autoSpinCube) {
+      if (autoSpinCubeRef.current) {
         cubeMesh.rotation.y += 0.009;
         cubeMesh.rotation.x += 0.004;
       }
 
-      composer.render();
+      bloomPass.enabled = bloomEnabledRef.current;
+      if (bloomEnabledRef.current) composer.render();
+      else renderer.render(scene, camera);
       const nextPixelRatio = renderBudget.sample(currentTime - lastRenderedTime);
       lastRenderedTime = currentTime;
       if (nextPixelRatio !== null) {
         renderer.setPixelRatio(nextPixelRatio);
+        composer.setPixelRatio(nextPixelRatio);
         composer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
       }
     };
