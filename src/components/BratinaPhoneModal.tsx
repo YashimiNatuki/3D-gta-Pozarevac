@@ -473,6 +473,19 @@ export const BratinaPhoneModal: React.FC<BratinaPhoneModalProps> = ({
                                 : `nije preuzet — kupi ${m.requiredTradeItemName ?? 'robu'} na Buvljaku`}
                             </div>
                           )}
+                          {m.type === 'escape_police' && (
+                            <div className="text-rose-200">
+                              POTERA: {wantedLevel}/5 zvezdica
+                              {m.requiresPackagePickup
+                                ? ` · PAKET: ${m.progress?.packagePickedUp ? 'preuzet' : 'nije preuzet'}`
+                                : ' · stigni do završnog skrovišta da ugasiš potragu'}
+                            </div>
+                          )}
+                          {m.type === 'plant_harvest' && (
+                            <div className="text-emerald-200">
+                              BERBA: {m.progress?.harvested ? 'završena — prati sledeći marker' : 'potrebna na parceli Čačalica'}
+                            </div>
+                          )}
                         </div>
                       )}
                       {isFailed && m.failureReason && (

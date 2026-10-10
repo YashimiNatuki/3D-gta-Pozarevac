@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
-import { INITIAL_DYNAMIC_MISSIONS, reconcileMissionCatalog, type DynamicMission } from '../src/services/dynamicMissionEngine';
+import {
+  DynamicMissionEngine,
+  INITIAL_DYNAMIC_MISSIONS,
+  INITIAL_TURF_ZONES,
+  reconcileMissionCatalog,
+  reconcileTurfZones,
+  type DynamicMission,
+} from '../src/services/dynamicMissionEngine';
 import {
   acceptMission,
   advanceMissionCheckpoint,
   getMissionActivationBlocker,
+  getMissionCheckpointBlocker,
   getMissionCompletionBlocker,
+  getWantedLevelAfterMissionAccept,
   recordTradePurchase,
   recordTradeSale,
+  shouldTriggerMissionCheckpoint,
   type StatefulMission,
 } from '../src/services/missionRules';
 import {
@@ -57,13 +67,13 @@ assert.equal(delivered.progress?.packagePickedUp, true);
 assert.equal(advanceMissionCheckpoint(delivered), null);
 assert.match(getMissionCompletionBlocker(accepted, { now: 61_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /isteklo/);
 
-const escapeMission: StatefulMission = { ...accepted, type: 'escape_police' };
+const escapeMission: StatefulMission = { ...accepted, type: 'escape_police', checkpoints: undefined };
 assert.match(getMissionCompletionBlocker(escapeMission, { now: 2_000, timeOfDay: 'night', wantedLevel: 2 }) ?? '', /poteru/);
 assert.equal(getMissionCompletionBlocker(escapeMission, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }), null);
-assert.match(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip' }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /kupi robu/);
-assert.match(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip', progress: { tradeStarted: true } }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /kupi robu/);
+assert.match(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip' }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /Prvo kupi/);
+assert.match(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip', progress: { tradeStarted: true } }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /Prvo kupi/);
 assert.match(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip', progress: { tradeStarted: true, tradeItemId: 'radio', tradeQuantity: 1 } }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /Prodaj/);
-assert.equal(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip', progress: { tradeStarted: true, tradeCompleted: true, tradeItemId: 'radio', tradeQuantity: 1 } }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }), null);
+assert.equal(getMissionCompletionBlocker({ ...accepted, type: 'trade_flip', checkpoints: undefined, progress: { tradeStarted: true, tradeCompleted: true, tradeItemId: 'radio', tradeQuantity: 1 } }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }), null);
 const tradeMission = acceptMission({
   ...base, id: 'trade', type: 'trade_flip', requiredTimeOfDay: 'day',
   requiredTradeItemId: 'retro_radio_cassette', requiredTradeItemName: 'Retro Radio-Kasetofon', requiredTradeQuantity: 2,
@@ -106,6 +116,92 @@ const soldCatalogTrade = recordTradeSale(saleCheckpoint, retroRadio.id, 1);
 assert.equal(soldCatalogTrade.progress?.tradeCompleted, true);
 assert.equal(getMissionCompletionBlocker(soldCatalogTrade, { now: 4_000, timeOfDay: 'day', wantedLevel: 0 }), null);
 
+const tradeBeforePickup = acceptMission(canonicalTrade, 5_000);
+assert.match(getMissionCheckpointBlocker(tradeBeforePickup) ?? '', /Pre napuštanja Buvljaka/);
+const tradeWithCargo = recordTradePurchase(tradeBeforePickup, { id: retroRadio.id, name: retroRadio.name }, 1);
+assert.equal(getMissionCheckpointBlocker(tradeWithCargo), null);
+
+const latchedMissionIds = new Set<string>();
+assert.equal(shouldTriggerMissionCheckpoint(latchedMissionIds, 'mission-latch-test', 2), true);
+assert.equal(shouldTriggerMissionCheckpoint(latchedMissionIds, 'mission-latch-test', 1), false);
+assert.equal(shouldTriggerMissionCheckpoint(latchedMissionIds, 'mission-latch-test', 3.2), false);
+assert.equal(shouldTriggerMissionCheckpoint(latchedMissionIds, 'mission-latch-test', 2), true);
+
+const repeaterKey = POŽAREVAC_MARKET_ITEMS.find((item) => item.id === 'contraband_repeater_key');
+const oddsChip = POŽAREVAC_MARKET_ITEMS.find((item) => item.id === 'contraband_odds_chip');
+assert.ok(repeaterKey);
+assert.ok(oddsChip);
+assert.equal(StreetEconomyEngine.calculateItemPrices(repeaterKey, 'night').sell - StreetEconomyEngine.calculateItemPrices(repeaterKey, 'night').buy, 850);
+assert.equal(StreetEconomyEngine.calculateItemPrices(oddsChip, 'night').sell - StreetEconomyEngine.calculateItemPrices(oddsChip, 'night').buy, 1000);
+
+const cacalicaTrade = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_10');
+const hipodromTrade = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_11');
+const tulbaEscape = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_12');
+const hipodromEscape = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_13');
+assert.ok(cacalicaTrade && hipodromTrade && tulbaEscape && hipodromEscape);
+assert.equal(cacalicaTrade.requiredTradeItemId, 'contraband_repeater_key');
+assert.ok(cacalicaTrade.checkpoints?.some((checkpoint) => checkpoint.x === 26 && checkpoint.z === 28));
+assert.equal(hipodromTrade.requiredTradeItemId, 'contraband_odds_chip');
+assert.ok(hipodromTrade.checkpoints?.some((checkpoint) => checkpoint.x === -28 && checkpoint.z === 26));
+assert.equal(tulbaEscape.wantedLevelOnStart, 2);
+assert.equal(tulbaEscape.requiresPackagePickup, true);
+assert.equal(hipodromEscape.wantedLevelOnStart, 1);
+assert.equal(hipodromEscape.requiresPackagePickup, true);
+
+const acceptedChase = acceptMission(tulbaEscape, 6_000);
+assert.equal(getWantedLevelAfterMissionAccept(acceptedChase, 0), 2);
+assert.equal(getWantedLevelAfterMissionAccept(acceptedChase, 4), 4);
+const pickedUpEvidence = advanceMissionCheckpoint(acceptedChase);
+assert.ok(pickedUpEvidence);
+assert.equal(pickedUpEvidence.progress?.packagePickedUp, true);
+assert.match(getMissionCompletionBlocker(acceptedChase, { now: 6_100, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /nije preuzet/);
+assert.match(getMissionCompletionBlocker(pickedUpEvidence, { now: 6_100, timeOfDay: 'night', wantedLevel: 2 }) ?? '', /poteru/);
+assert.match(getMissionCompletionBlocker(pickedUpEvidence, { now: 6_100, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /sledećeg markera/);
+const escapedThroughPark = advanceMissionCheckpoint(pickedUpEvidence);
+assert.ok(escapedThroughPark);
+assert.equal(getMissionCompletionBlocker(escapedThroughPark, { now: 6_100, timeOfDay: 'night', wantedLevel: 0 }), null);
+assert.equal(advanceMissionCheckpoint(escapedThroughPark), null);
+
+const generatedMissions = Array.from({ length: 50 }, (_, seed) => DynamicMissionEngine.generateDailyMissions(seed)).flat();
+assert.ok(generatedMissions.every((mission) => ['delivery', 'trade_flip', 'escape_police', 'turf_war', 'plant_harvest'].includes(mission.type)));
+for (const mission of generatedMissions) {
+  if (mission.type === 'delivery') assert.ok((mission.checkpoints?.length ?? 0) >= 2);
+  if (mission.type === 'trade_flip') {
+    assert.ok(mission.requiredTradeItemId);
+    assert.ok(POŽAREVAC_MARKET_ITEMS.some((item) => item.id === mission.requiredTradeItemId));
+    assert.equal(mission.requiredTradeQuantity, 1);
+    assert.equal(mission.checkpoints?.length, 3);
+  }
+  if (mission.type === 'escape_police') {
+    assert.ok((mission.wantedLevelOnStart ?? 0) > 0);
+    assert.equal(mission.requiresPackagePickup, true);
+    assert.ok((mission.checkpoints?.length ?? 0) >= 2);
+  }
+  if (mission.type === 'turf_war') {
+    assert.ok(mission.turfZoneId);
+    assert.ok(INITIAL_TURF_ZONES.some((zone) => zone.id === mission.turfZoneId && zone.isContested));
+  }
+  if (mission.type === 'plant_harvest') {
+    assert.equal(mission.requiredTimeOfDay, 'dawn');
+    assert.deepEqual(mission.targetCoords, { x: 15, z: 12 });
+  }
+}
+
+const savedHipodromZone = INITIAL_TURF_ZONES.find((zone) => zone.id === 'tz_hipodrom');
+assert.ok(savedHipodromZone);
+const migratedTurfZones = reconcileTurfZones([{
+  ...savedHipodromZone,
+  centerCoords: { x: 22, z: -13 },
+  controllingGang: 'Y!App Konglomerat',
+  controlPercentage: 73,
+}]);
+const migratedHipodromZone = migratedTurfZones.find((zone) => zone.id === 'tz_hipodrom');
+assert.ok(migratedHipodromZone);
+assert.deepEqual(migratedHipodromZone.centerCoords, { x: -28, z: 26 });
+assert.equal(migratedHipodromZone.controllingGang, 'Y!App Konglomerat');
+assert.equal(migratedHipodromZone.controlPercentage, 73);
+assert.equal(migratedTurfZones.length, INITIAL_TURF_ZONES.length);
+
 const canonicalTradeMission = INITIAL_DYNAMIC_MISSIONS.find((mission) => mission.id === 'dm_9');
 assert.ok(canonicalTradeMission);
 const migratedMissions = reconcileMissionCatalog([{
@@ -134,7 +230,7 @@ assert.deepEqual(migratedTradeMission.targetCoords, canonicalTradeMission.checkp
 });
 assert.equal(migratedTradeMission.expiresAt, 10_000 + (canonicalTradeMission.timeLimitSeconds ?? 0) * 1000);
 assert.ok(migratedMissions.some((mission) => mission.id === 'dm_8'), 'new catalog missions should be appended to older saves');
-assert.match(getMissionCompletionBlocker(migratedTradeMission, { now: 10_001, timeOfDay: 'day', wantedLevel: 0 }) ?? '', /kupi robu/);
+assert.match(getMissionCompletionBlocker(migratedTradeMission, { now: 10_001, timeOfDay: 'day', wantedLevel: 0 }) ?? '', /Prvo kupi/);
 
 assert.match(getMissionCompletionBlocker({ ...accepted, type: 'plant_harvest' }, { now: 2_000, timeOfDay: 'night', wantedLevel: 0 }) ?? '', /uber/);
 

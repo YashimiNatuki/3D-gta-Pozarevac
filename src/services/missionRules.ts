@@ -59,6 +59,47 @@ export function acceptMission(mission: StatefulMission, now: number): StatefulMi
   };
 }
 
+export function getWantedLevelAfterMissionAccept(mission: StatefulMission, currentWantedLevel: number): number {
+  const current = Number.isFinite(currentWantedLevel) ? Math.floor(currentWantedLevel) : 0;
+  const requested = Number.isFinite(mission.wantedLevelOnStart) ? Math.floor(mission.wantedLevelOnStart!) : 0;
+  return Math.max(0, Math.min(5, Math.max(current, requested)));
+}
+
+export function getMissionCheckpointBlocker(mission: StatefulMission): string | null {
+  const checkpointIndex = mission.checkpointIndex ?? 0;
+  if (mission.type === 'trade_flip' && checkpointIndex === 0 && mission.checkpoints?.length) {
+    const requiredQuantity = mission.requiredTradeQuantity ?? 1;
+    const hasRequiredCargo = Boolean(
+      mission.progress?.tradeStarted &&
+      mission.progress.tradeItemId &&
+      (!mission.requiredTradeItemId || mission.progress.tradeItemId === mission.requiredTradeItemId) &&
+      (mission.progress.tradeQuantity ?? 0) >= requiredQuantity
+    );
+    if (!hasRequiredCargo) {
+      return `Pre napuštanja Buvljaka kupi ${requiredQuantity} × ${mission.requiredTradeItemName ?? 'ugovoreni artikal'}.`;
+    }
+  }
+  if (mission.type === 'plant_harvest' && checkpointIndex === 0 && mission.checkpoints?.length && !mission.progress?.harvested) {
+    return 'Prvo uberi zrelu biljku na parceli Čačalica; zatim nastavi do sledećeg markera.';
+  }
+  return null;
+}
+
+export function shouldTriggerMissionCheckpoint(
+  latchedMissionIds: Set<string>,
+  missionId: string,
+  distance: number,
+  radius = 3.2
+): boolean {
+  if (!Number.isFinite(distance) || distance >= radius) {
+    latchedMissionIds.delete(missionId);
+    return false;
+  }
+  if (latchedMissionIds.has(missionId)) return false;
+  latchedMissionIds.add(missionId);
+  return true;
+}
+
 export function recordTradePurchase(
   mission: StatefulMission,
   item: { id: string; name: string },
@@ -130,7 +171,7 @@ export function advanceMissionCheckpoint(mission: StatefulMission): StatefulMiss
     targetCoords: { x: next.x, z: next.z },
     progress: {
       ...mission.progress,
-      ...(mission.type === 'delivery' ? { packagePickedUp: true } : {}),
+      ...(index === 0 && (mission.type === 'delivery' || mission.requiresPackagePickup) ? { packagePickedUp: true } : {}),
     },
   };
 }
@@ -144,20 +185,29 @@ export function getMissionCompletionBlocker(
   if (mission.requiredTimeOfDay && mission.requiredTimeOfDay !== 'any' && mission.requiredTimeOfDay !== context.timeOfDay) {
     return `Zadatak možeš završiti samo tokom perioda ${mission.requiredTimeOfDay}.`;
   }
+  if (mission.requiresPackagePickup && !mission.progress?.packagePickedUp) {
+    return 'Paket ili dokaz još nije preuzet na prvom markeru.';
+  }
   if (mission.type === 'escape_police' && context.wantedLevel > 0) {
     return 'Najpre izgubi poteru i spusti nivo potrage na nulu.';
   }
   if (
     mission.type === 'trade_flip' &&
-    (!mission.progress?.tradeStarted || !mission.progress.tradeItemId || (mission.progress.tradeQuantity ?? 0) <= 0)
+    (!mission.progress?.tradeStarted ||
+      !mission.progress.tradeItemId ||
+      (mission.requiredTradeItemId && mission.progress.tradeItemId !== mission.requiredTradeItemId) ||
+      (mission.progress.tradeQuantity ?? 0) < (mission.requiredTradeQuantity ?? 1))
   ) {
-    return 'Prvo kupi robu na Buvljaku, pa je donesi na označeno mesto.';
+    return `Prvo kupi ${mission.requiredTradeQuantity ?? 1} × ${mission.requiredTradeItemName ?? 'ugovoreni artikal'} na Buvljaku.`;
   }
   if (mission.type === 'trade_flip' && !mission.progress?.tradeCompleted) {
     return 'Prodaj bar jednu jedinicu kupljene robe pre isteka roka.';
   }
   if (mission.type === 'plant_harvest' && !mission.progress?.harvested) {
     return 'Prvo uberi zrelu biljku u plantaži, pa se vrati na lokaciju zadatka.';
+  }
+  if (mission.checkpoints?.length && (mission.checkpointIndex ?? 0) < mission.checkpoints.length - 1) {
+    return 'Stigni do sledećeg markera pre nego što zatražiš završetak zadatka.';
   }
   return null;
 }

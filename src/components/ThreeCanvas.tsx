@@ -21,6 +21,7 @@ import { PoliceAndDogsSystem } from '../services/policeAndDogsSystem';
 import { DynamicMission } from '../services/dynamicMissionEngine';
 import { PlantPlot } from '../services/streetEconomy';
 import { CctvSystem } from '../services/cctvSystem';
+import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
 
 export interface ThreeCanvasProps {
   cubeColor: string;
@@ -563,6 +564,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 13. DYNAMIC MISSION BEACONS (Flashing holographic beacons for dynamic missions)
     const missionBeaconsGroup = new THREE.Group();
     scene.add(missionBeaconsGroup);
+    const missionProximityLatch = new Set<string>();
 
     // 14. BUILD 3D THUG CHARACTER ("Mali Bandit")
     const characterRig = buildThugCharacter(outfit);
@@ -819,19 +821,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       });
 
-      // Check dynamic missions proximity
+      // Trigger each checkpoint once on entry; remain latched until the player leaves its radius.
+      const activeMissionIds = new Set<string>();
       dynamicMissionsRef.current.forEach((dm) => {
-        if (dm.status === 'active') {
-          const distToDm = controller.position.distanceTo(
-            new THREE.Vector3(dm.targetCoords.x, 0, dm.targetCoords.z)
-          );
-          if (distToDm < 3.2) {
-            if (onCompleteDynamicMissionRef.current) {
-              onCompleteDynamicMissionRef.current(dm.id);
-            }
-            audioDsp.playHarvestChime();
-          }
+        if (dm.status !== 'active') return;
+        activeMissionIds.add(dm.id);
+        const distToDm = controller.position.distanceTo(
+          new THREE.Vector3(dm.targetCoords.x, 0, dm.targetCoords.z)
+        );
+        if (shouldTriggerMissionCheckpoint(missionProximityLatch, dm.id, distToDm, 3.2)) {
+          onCompleteDynamicMissionRef.current?.(dm.id);
+          audioDsp.playHarvestChime();
         }
+      });
+      missionProximityLatch.forEach((missionId) => {
+        if (!activeMissionIds.has(missionId)) missionProximityLatch.delete(missionId);
       });
 
       // Monument animations

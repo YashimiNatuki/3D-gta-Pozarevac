@@ -29,6 +29,7 @@ import {
   INITIAL_DYNAMIC_MISSIONS,
   DynamicMissionEngine,
   reconcileMissionCatalog,
+  reconcileTurfZones,
   TurfZone,
   INITIAL_TURF_ZONES,
 } from './services/dynamicMissionEngine';
@@ -36,7 +37,9 @@ import {
   acceptMission,
   advanceMissionCheckpoint,
   getMissionActivationBlocker,
+  getMissionCheckpointBlocker,
   getMissionCompletionBlocker,
+  getWantedLevelAfterMissionAccept,
   recordTradePurchase,
   recordTradeSale,
 } from './services/missionRules';
@@ -123,7 +126,9 @@ export function App() {
   const [missionFeedback, setMissionFeedback] = useState<string | null>(null);
   const [marketFeedback, setMarketFeedback] = useState<string | null>(null);
   const resolvingMissionIdsRef = useRef(new Set<string>());
-  const [turfZones, setTurfZones] = useState<TurfZone[]>(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES);
+  const [turfZones, setTurfZones] = useState<TurfZone[]>(() =>
+    reconcileTurfZones(initialGameProgress?.turfZones ?? INITIAL_TURF_ZONES)
+  );
   const [plantPlots, setPlantPlots] = useState<PlantPlot[]>(initialGameProgress?.plantPlots ?? INITIAL_PLANT_PLOTS);
   const [inventory, setInventory] = useState<InventoryItem[]>(initialGameProgress?.inventory ?? INITIAL_INVENTORY);
   const [playerPos, setPlayerPos] = useState({ x: 0, z: 4, heading: 0 });
@@ -248,7 +253,7 @@ export function App() {
       .then((cloudSave) => {
         if (cancelled || !cloudSave) return;
         setCharacterStats(cloudSave.stats);
-        if (cloudSave.turfZones?.length) setTurfZones(cloudSave.turfZones);
+        if (cloudSave.turfZones?.length) setTurfZones(reconcileTurfZones(cloudSave.turfZones));
         if (isGameProgressData(cloudSave.gameProgress)) {
           const saved = cloudSave.gameProgress;
           setScore(saved.score);
@@ -256,7 +261,7 @@ export function App() {
           setCharacterStats(saved.characterStats);
           setQuests(saved.quests);
           setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
-          setTurfZones(saved.turfZones);
+          setTurfZones(reconcileTurfZones(saved.turfZones));
           setPlantPlots(saved.plantPlots);
           setInventory(saved.inventory);
         }
@@ -466,16 +471,27 @@ export function App() {
 
     resolvingMissionIdsRef.current.delete(missionId);
     setMissionFeedback(null);
-    setDynamicMissions((previous) => previous.map((item) =>
-      item.id === missionId ? acceptMission(item, Date.now()) : item
-    ));
+    const acceptedMission = acceptMission(mission, Date.now());
+    setDynamicMissions((previous) => previous.map((item) => item.id === missionId ? acceptedMission : item));
+    setCharacterStats((stats) => ({
+      ...stats,
+      wantedLevel: getWantedLevelAfterMissionAccept(acceptedMission, stats.wantedLevel || 0),
+    }));
     return null;
   };
 
-  const handleCompleteDynamicMission = (missionId: string) => {
+  const handleCompleteDynamicMission = (missionId: string, missionOverride?: DynamicMission) => {
     if (resolvingMissionIdsRef.current.has(missionId)) return;
-    const mission = dynamicMissions.find((item) => item.id === missionId && item.status === 'active');
+    const mission = missionOverride?.id === missionId && missionOverride.status === 'active'
+      ? missionOverride
+      : dynamicMissions.find((item) => item.id === missionId && item.status === 'active');
     if (!mission) return;
+
+    const checkpointBlocker = getMissionCheckpointBlocker(mission);
+    if (checkpointBlocker) {
+      setMissionFeedback(checkpointBlocker);
+      return;
+    }
 
     const checkpointUpdate = advanceMissionCheckpoint(mission);
     if (checkpointUpdate) {
@@ -487,10 +503,12 @@ export function App() {
       return;
     }
 
+    const escapeComplete = mission.type === 'escape_police' &&
+      (!mission.requiresPackagePickup || Boolean(mission.progress?.packagePickedUp));
     const blocker = getMissionCompletionBlocker(mission, {
       now: Date.now(),
       timeOfDay,
-      wantedLevel: characterStats.wantedLevel || 0,
+      wantedLevel: escapeComplete ? 0 : characterStats.wantedLevel || 0,
     });
     if (blocker) {
       setMissionFeedback(blocker);
@@ -509,7 +527,9 @@ export function App() {
       ...stats,
       cash: stats.cash + mission.rewardCash,
       respect: Math.min(100, stats.respect + mission.rewardRespect),
-      wantedLevel: Math.max(0, Math.min(5, (stats.wantedLevel || 0) + (mission.wantedLevelChange || 0))),
+      wantedLevel: mission.type === 'escape_police'
+        ? 0
+        : Math.max(0, Math.min(5, (stats.wantedLevel || 0) + (mission.wantedLevelChange || 0))),
     }));
 
     if (mission.type === 'turf_war' && mission.turfZoneId) {
@@ -589,11 +609,21 @@ export function App() {
         },
       ];
     });
-    setDynamicMissions((missions) => missions.map((mission) =>
-      mission.status === 'active' && mission.type === 'trade_flip'
-        ? recordTradePurchase(mission, { id: item.id, name: item.name }, quantity)
-        : mission
-    ));
+    if (activeTradeMission) {
+      let updatedMission = recordTradePurchase(activeTradeMission, { id: item.id, name: item.name }, quantity);
+      if (
+        updatedMission !== activeTradeMission &&
+        (activeTradeMission.checkpointIndex ?? 0) === 0 &&
+        updatedMission.progress?.tradeItemId === item.id &&
+        updatedMission.progress.tradeStarted
+      ) {
+        updatedMission = advanceMissionCheckpoint(updatedMission) ?? updatedMission;
+        setMissionFeedback(updatedMission.checkpoints?.[updatedMission.checkpointIndex ?? 0]?.label ?? 'Teret je evidentiran; sledeći cilj je označen.');
+      }
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.id === activeTradeMission.id && mission.status === 'active' ? updatedMission : mission
+      ));
+    }
   };
 
   const handleSellItem = (invItem: InventoryItem, quantity: number, price: number) => {
@@ -624,11 +654,16 @@ export function App() {
         })
         .filter((i) => i.quantity > 0);
     });
-    setDynamicMissions((missions) => missions.map((mission) =>
-      mission.status === 'active' && mission.type === 'trade_flip'
-        ? recordTradeSale(mission, invItem.itemId, quantity)
-        : mission
-    ));
+    if (activeTradeMission) {
+      const updatedMission = recordTradeSale(activeTradeMission, invItem.itemId, quantity);
+      setDynamicMissions((missions) => missions.map((mission) =>
+        mission.id === activeTradeMission.id && mission.status === 'active' ? updatedMission : mission
+      ));
+      if (updatedMission.progress?.tradeCompleted &&
+          Math.hypot(playerPos.x - updatedMission.targetCoords.x, playerPos.z - updatedMission.targetCoords.z) < 3.2) {
+        handleCompleteDynamicMission(updatedMission.id, updatedMission);
+      }
+    }
   };
 
   // Botanical Farming Handlers
@@ -712,11 +747,19 @@ export function App() {
     );
 
     if (plot.id === 'plot_3' && Math.hypot(playerPos.x - plot.coords.x, playerPos.z - plot.coords.z) <= 7) {
-      setDynamicMissions((missions) => missions.map((mission) =>
-        mission.status === 'active' && mission.type === 'plant_harvest'
-          ? { ...mission, progress: { ...mission.progress, harvested: true } }
-          : mission
-      ));
+      const activeHarvestMission = dynamicMissions.find((mission) => mission.status === 'active' && mission.type === 'plant_harvest');
+      if (activeHarvestMission) {
+        const harvestedMission = { ...activeHarvestMission, progress: { ...activeHarvestMission.progress, harvested: true } };
+        const advancedMission = (harvestedMission.checkpointIndex ?? 0) === 0
+          ? advanceMissionCheckpoint(harvestedMission) ?? harvestedMission
+          : harvestedMission;
+        setDynamicMissions((missions) => missions.map((mission) =>
+          mission.id === activeHarvestMission.id && mission.status === 'active' ? advancedMission : mission
+        ));
+        if (advancedMission !== harvestedMission) {
+          setMissionFeedback(advancedMission.checkpoints?.[advancedMission.checkpointIndex ?? 0]?.label ?? 'Berba je evidentirana; sledeći cilj je označen.');
+        }
+      }
     }
   };
 
@@ -756,7 +799,7 @@ export function App() {
       setCharacterStats(saved.characterStats);
       setQuests(saved.quests);
       setDynamicMissions(reconcileMissionCatalog(saved.dynamicMissions));
-      setTurfZones(saved.turfZones);
+      setTurfZones(reconcileTurfZones(saved.turfZones));
       setPlantPlots(saved.plantPlots);
       setInventory(saved.inventory);
     }
