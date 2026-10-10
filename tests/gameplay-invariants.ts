@@ -37,6 +37,7 @@ import {
   POŽAREVAC_MARKET_ITEMS,
   StreetEconomyEngine,
 } from '../src/services/streetEconomy';
+import { AdaptiveRenderBudget, getInitialPixelRatio } from '../src/services/rendererPerformance';
 
 const base: DynamicMission = {
   id: 'test-delivery', title: 'Dostava', type: 'delivery',
@@ -51,6 +52,17 @@ const routeMission: StatefulMission = {
   ...base,
   checkpoints: [{ label: 'Preuzmi paket', x: 0, z: -10 }, { label: 'Isporuči paket', x: 8, z: -5 }],
 };
+
+assert.equal(getInitialPixelRatio(3, 4), 1.25);
+assert.equal(getInitialPixelRatio(1.5, 16), 1.5);
+const renderBudget = new AdaptiveRenderBudget(1.5, { sampleSize: 3 });
+assert.equal(renderBudget.sample(30), null);
+assert.equal(renderBudget.sample(28), null);
+assert.equal(renderBudget.sample(26), 1.25);
+assert.equal(renderBudget.pixelRatio, 1.25);
+assert.equal(renderBudget.sample(12), null);
+assert.equal(renderBudget.sample(12), null);
+assert.equal(renderBudget.sample(12), 1.375);
 
 assert.match(getMissionActivationBlocker(routeMission, undefined, 'day') ?? '', /night/);
 assert.equal(getMissionActivationBlocker(routeMission, undefined, 'night'), null);

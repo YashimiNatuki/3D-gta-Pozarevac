@@ -22,7 +22,7 @@ import { DynamicMission } from '../services/dynamicMissionEngine';
 import { PlantPlot } from '../services/streetEconomy';
 import { CctvSystem } from '../services/cctvSystem';
 import { shouldTriggerMissionCheckpoint } from '../services/missionRules';
-
+import { AdaptiveRenderBudget, getInitialPixelRatio } from '../services/rendererPerformance';
 export interface ThreeCanvasProps {
   cubeColor: string;
   sphereColor: string;
@@ -129,7 +129,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const deviceMemory = 'deviceMemory' in navigator
+      ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
+      : undefined;
+    const renderBudget = new AdaptiveRenderBudget(
+      getInitialPixelRatio(window.devicePixelRatio, deviceMemory),
+    );
+    renderer.setPixelRatio(renderBudget.pixelRatio);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -694,12 +700,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     // 19. ANIMATION LOOP (Precision performance.now timer without deprecation warnings)
     let lastTime = performance.now();
     let startTime = performance.now();
+    let lastRenderedTime = startTime;
     let animationFrameId: number;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
       const currentTime = performance.now();
+      if (document.visibilityState === 'hidden') {
+        lastTime = currentTime;
+        lastRenderedTime = currentTime;
+        return;
+      }
       const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
       const elapsedTime = (currentTime - startTime) / 1000;
@@ -847,6 +859,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
 
       composer.render();
+      const nextPixelRatio = renderBudget.sample(currentTime - lastRenderedTime);
+      lastRenderedTime = currentTime;
+      if (nextPixelRatio !== null) {
+        renderer.setPixelRatio(nextPixelRatio);
+        composer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+      }
     };
 
     animate();
