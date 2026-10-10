@@ -18,7 +18,7 @@
 - [x] Added one-time POI discovery rewards and checkpoint confirmation when the active mission target matches a POI.
 - [x] Updated HUD copy with `AUTO-AKTIVACIJA`, `E / KLIK`, description, reward semantics and mission panel guidance.
 - [x] Added graceful WebGL fallback so HUD, missions and intro remain accessible in Computer Use browsers that block WebGL2.
-- [x] Restored the intro to the original composition: no extra `GTA POŽAREVAC` overlay; the existing in-video production words are purple street-graffiti styled.
+- [x] Restored the intro exactly from the supplied `GameIntro_web.mp4`: no extra overlay, recolor, crop or title remaster.
 - [x] Added invariant tests for modular bounds, Vašarište activation and cooldown.
 - [x] Passed TypeScript, invariants, production build, diff hygiene and browser preview smoke checks.
 
