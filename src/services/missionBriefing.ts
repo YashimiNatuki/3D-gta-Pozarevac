@@ -44,7 +44,7 @@ export function buildMissionBriefing(
   }
   if (mission.type === 'escape_police') requirements.push('potera mora biti ugašena pre završetka');
   if (mission.requiresPackagePickup || mission.type === 'delivery') requirements.push('preuzmi paket pre završne isporuke');
-  if (mission.type === 'plant_harvest') requirements.push('uberite zrelu biljku na traženoj parceli');
+  if (mission.type === 'plant_harvest') requirements.push('uberi zrelu biljku na traženoj parceli');
 
   const reward = [
     `$${Math.max(0, Math.round(mission.rewardCash))}`,
