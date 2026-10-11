@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { getNextCinematicClipIndex } from '../src/services/cinematicSequence';
 import {
   DynamicMissionEngine,
   CITY_DISTRICT_MISSION_IDS,
@@ -461,6 +462,12 @@ const introStorage: KeyValueStorage = {
   getItem: (key) => introMemory.get(key) ?? null,
   setItem: (key, value) => { introMemory.set(key, value); },
 };
+assert.equal(getNextCinematicClipIndex(0, 2), 1, 'the opening clip should advance to the trailer');
+assert.equal(getNextCinematicClipIndex(1, 2), null, 'the last clip should end the sequence');
+assert.equal(getNextCinematicClipIndex(-1, 2), null, 'negative clip indexes must fail closed');
+assert.equal(getNextCinematicClipIndex(0, 0), null, 'empty sequences must fail closed');
+assert.equal(getNextCinematicClipIndex(0.5, 2), null, 'fractional clip indexes must fail closed');
+
 assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), true, 'a new player should see the original intro');
 assert.equal(markCinematicIntroSeen(introStorage), true);
 assert.equal(shouldAutoPlayCinematicIntro(false, introStorage), false, 'a dismissed intro should not auto-play again');
