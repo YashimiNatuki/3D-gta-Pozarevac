@@ -62,6 +62,15 @@ cp .env.example .env.local
 
 **Ne commit-uj `.env`, `.env.local`, API ključeve, OAuth tokene ili Firebase tajne.** Koristi lokalne environment varijable ili secret manager hosting platforme.
 
+## Filmski uvod
+
+Pokretanje igre koristi sekvencu sa dva nezavisna video asseta:
+
+- `/intro/game-intro.mp4` — prvi cinematic intro; poster je `/intro/poster.jpg`.
+- `/videos/GameIntro_Pozarevac_ThugLife.mp4` — zaseban Požarevac THUG LIFE trailer.
+
+Sekvenca podržava preskakanje i nastavak u igru ako neki fajl nedostaje ili ne može da se reprodukuje. Nedostupan video ne sme da blokira ulazak u gameplay. Provere sekvence nalaze se u `tests/gameplay-invariants.ts`.
+
 ## Kontrole
 
 | Akcija | Kontrola |
