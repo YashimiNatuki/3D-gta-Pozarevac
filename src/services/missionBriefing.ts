@@ -53,7 +53,7 @@ export function buildMissionBriefing(
   ].join(' · ');
 
   return [
-    `MISИJA [${MISSION_TYPE_LABELS[mission.type]}]: ${mission.title}`,
+    `MISIJA [${MISSION_TYPE_LABELS[mission.type]}]: ${mission.title}`,
     `DAVALAC: ${mission.giver.name} · ${mission.locationName}`,
     `CILJ: ${checkpoint ? checkpoint.label : mission.description}`,
     `RUTA: ${steps}`,
