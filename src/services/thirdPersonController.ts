@@ -109,6 +109,7 @@ export class ThirdPersonController {
   private boundOnMouseUp: (e: MouseEvent) => void;
   private boundOnWheel: (e: WheelEvent) => void;
   private boundOnContextMenu: (e: MouseEvent) => void;
+  private boundOnWindowBlur: () => void;
 
   constructor(opts: ControllerOptions) {
     this.camera = opts.camera;
@@ -164,8 +165,14 @@ export class ThirdPersonController {
     this.boundOnMouseUp = this.onMouseUp.bind(this);
     this.boundOnWheel = this.onWheel.bind(this);
     this.boundOnContextMenu = (e: MouseEvent) => e.preventDefault();
+    this.boundOnWindowBlur = () => {
+      // Prevent a stuck walk/run/jump if the player alt-tabs or the browser loses focus.
+      this.keys = {};
+      this.isOrbiting = false;
+    };
 
     window.addEventListener('keydown', this.boundOnKeyDown);
+    window.addEventListener('blur', this.boundOnWindowBlur);
     window.addEventListener('keyup', this.boundOnKeyUp);
     this.domElement.addEventListener('mousedown', this.boundOnMouseDown);
     window.addEventListener('mousemove', this.boundOnMouseMove);
@@ -201,11 +208,15 @@ export class ThirdPersonController {
 
   private onKeyDown(e: KeyboardEvent) {
     // Avoid capturing inputs if user is typing in chat inputs or forms
-    const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-    if (targetTag === 'input' || targetTag === 'textarea') return;
+    const target = e.target as HTMLElement | null;
+    const targetTag = target?.tagName?.toLowerCase();
+    const isEditable = targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select'
+      || target?.isContentEditable;
+    if (isEditable) return;
 
     const key = e.key.toLowerCase();
     this.keys[key] = true;
+    if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) e.preventDefault();
 
     // Jump handling
     if (e.code === 'Space' && !this.isJumping) {
@@ -533,8 +544,13 @@ export class ThirdPersonController {
   }
 
   public dispose() {
+    // Release Cannon bodies and broadphase state when the Three.js scene unmounts.
+    // The controller currently owns this engine instance, so cleanup belongs here.
+    this.physicsEngine.dispose();
+    this.keys = {};
     window.removeEventListener('keydown', this.boundOnKeyDown);
     window.removeEventListener('keyup', this.boundOnKeyUp);
+    window.removeEventListener('blur', this.boundOnWindowBlur);
     this.domElement.removeEventListener('mousedown', this.boundOnMouseDown);
     window.removeEventListener('mousemove', this.boundOnMouseMove);
     window.removeEventListener('mouseup', this.boundOnMouseUp);

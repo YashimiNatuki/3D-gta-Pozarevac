@@ -45,7 +45,7 @@ Web 3D igra / interaktivni prototip smešten u stilizovanu, cyberpunk verziju ce
 git clone https://github.com/YashimiNatuki/3D-gta-Pozarevac.git
 cd 3D-gta-Pozarevac
 npm ci
-npm run dev
+npm run dev-app
 ```
 
 Vite ispisuje lokalni URL, podrazumevano `http://localhost:3000`.
@@ -79,7 +79,8 @@ HUD sadrži dodatne kontrole za kameru, radar, vreme, radio, misije, farmu, pija
 ## Razvojne komande
 
 ```bash
-npm run dev             # Vite dev server
+npm run dev-app         # preporučeno: pokretanje cele GTA Požarevac aplikacije
+npm run dev             # kompatibilni alias za dev-app
 npm run lint            # TypeScript provera (tsc --noEmit)
 npm run test:invariants # gameplay/persistence/security invariant testovi
 npm run build           # produkcioni build u dist/

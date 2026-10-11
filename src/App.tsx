@@ -68,6 +68,7 @@ const AiChatDrawer = React.lazy(() => import('./components/AiChatDrawer').then((
 const GraveyardVaultModal = React.lazy(() => import('./components/GraveyardVaultModal').then((module) => ({ default: module.GraveyardVaultModal })));
 const VeoStudioModal = React.lazy(() => import('./components/VeoStudioModal').then((module) => ({ default: module.VeoStudioModal })));
 const GameIntroVideoModal = React.lazy(() => import('./components/GameIntroVideoModal').then((module) => ({ default: module.GameIntroVideoModal })));
+const CinematicIntroSequence = React.lazy(() => import('./components/CinematicIntroSequence').then((module) => ({ default: module.CinematicIntroSequence })));
 const CharacterCreatorModal = React.lazy(() => import('./components/CharacterCreatorModal').then((module) => ({ default: module.CharacterCreatorModal })));
 const BratinaPhoneModal = React.lazy(() => import('./components/BratinaPhoneModal').then((module) => ({ default: module.BratinaPhoneModal })));
 const StreetMarketModal = React.lazy(() => import('./components/StreetMarketModal').then((module) => ({ default: module.StreetMarketModal })));
@@ -172,6 +173,7 @@ export function App() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isVeoOpen, setIsVeoOpen] = useState(false);
   const [isIntroOpen, setIsIntroOpen] = useState(false);
+  const [isCinematicSequenceOpen, setIsCinematicSequenceOpen] = useState(false);
   const [hasEnteredGame, setHasEnteredGame] = useState(false);
   const [prioritizeBundledIntro, setPrioritizeBundledIntro] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState<string | null>(() => {
@@ -304,7 +306,9 @@ export function App() {
     );
     setPrioritizeBundledIntro(shouldPlayOriginalIntro);
     if (shouldPlayOriginalIntro) {
-      setIsIntroOpen(true);
+      // The launch flow owns both cinematic clips; the editable intro modal remains available from the UI.
+      setIsIntroOpen(false);
+      setIsCinematicSequenceOpen(true);
       return;
     }
     setIsIntroOpen(false);
@@ -1085,6 +1089,16 @@ export function App() {
           setIsIntroOpen(true);
         }}
       />
+
+      {/* First-launch cinematic sequence: both films play in order, missing assets never block gameplay. */}
+      {isCinematicSequenceOpen && <CinematicIntroSequence
+        onFinish={() => {
+          markCinematicIntroSeen();
+          setHasEnteredGame(true);
+          setIsCinematicSequenceOpen(false);
+          setPrioritizeBundledIntro(false);
+        }}
+      />}
 
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
       <GameIntroVideoModal
