@@ -11,6 +11,7 @@ import {
   reconcileTurfZones,
   type DynamicMission,
 } from '../src/services/dynamicMissionEngine';
+import { buildMissionBriefing } from '../src/services/missionBriefing';
 import {
   acceptMission,
   advanceMissionCheckpoint,
@@ -240,6 +241,11 @@ assert.match(getMissionActivationBlocker(routeMission, { ...routeMission, id: 'o
 
 const accepted = acceptMission(routeMission, 1_000);
 assert.equal(accepted.status, 'active');
+const missionBriefing = buildMissionBriefing(accepted, 'night');
+assert.match(missionBriefing, /MISIJA/);
+assert.match(missionBriefing, /Preuzmi paket/);
+assert.match(missionBriefing, /rok: 1 min/);
+assert.match(missionBriefing, /NAGRADA: \\$100 · 50 XP · 1 ugleda/);
 assert.equal(accepted.expiresAt, 61_000);
 assert.deepEqual(accepted.targetCoords, { x: 0, z: -10 });
 const delivered = advanceMissionCheckpoint(accepted);
