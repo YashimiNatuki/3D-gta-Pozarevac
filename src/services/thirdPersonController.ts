@@ -533,6 +533,10 @@ export class ThirdPersonController {
   }
 
   public dispose() {
+    // Release Cannon bodies and broadphase state when the Three.js scene unmounts.
+    // The controller currently owns this engine instance, so cleanup belongs here.
+    this.physicsEngine.dispose();
+    this.keys = {};
     window.removeEventListener('keydown', this.boundOnKeyDown);
     window.removeEventListener('keyup', this.boundOnKeyUp);
     this.domElement.removeEventListener('mousedown', this.boundOnMouseDown);
