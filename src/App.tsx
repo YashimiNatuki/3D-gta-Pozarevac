@@ -61,6 +61,7 @@ import {
   isSeedCompatibleWithDistrict,
 } from './services/streetEconomy';
 import { applyVehicleImpactConsequences } from './services/vehicleImpactConsequences';
+import { buildMissionBriefing } from './services/missionBriefing';
 import { captureIntroStorageSnapshot, markCinematicIntroSeen, shouldAutoPlayCinematicIntro } from './services/cinematicIntroService';
 
 const DriveSyncModal = React.lazy(() => import('./components/DriveSyncModal').then((module) => ({ default: module.DriveSyncModal })));
@@ -555,8 +556,8 @@ export function App() {
     }
 
     resolvingMissionIdsRef.current.delete(missionId);
-    setMissionFeedback(null);
     const acceptedMission = acceptMission(mission, Date.now());
+    setMissionFeedback(buildMissionBriefing(acceptedMission, timeOfDay));
     setDynamicMissions((previous) => previous.map((item) => item.id === missionId ? acceptedMission : item));
     setCharacterStats((stats) => ({
       ...stats,
