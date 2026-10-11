@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getNextCinematicClipIndex } from '../services/cinematicSequence';
 
 export interface CinematicIntroSequenceProps {
   onFinish: () => void;
@@ -50,8 +51,9 @@ export function CinematicIntroSequence({ onFinish }: CinematicIntroSequenceProps
   }, [onFinish]);
 
   const advance = useCallback(() => {
-    if (clipIndex + 1 < CLIPS.length) {
-      setClipIndex((current) => Math.min(current + 1, CLIPS.length - 1));
+    const nextIndex = getNextCinematicClipIndex(clipIndex, CLIPS.length);
+    if (nextIndex !== null) {
+      setClipIndex(nextIndex);
       setVideoFailed(false);
     } else {
       finish();
@@ -168,7 +170,7 @@ export function CinematicIntroSequence({ onFinish }: CinematicIntroSequenceProps
               onClick={started ? advance : () => setStarted(true)}
               className="rounded bg-cyan-300 px-5 py-2 text-xs font-black tracking-wider text-slate-950 hover:bg-white"
             >
-              {started ? (clipIndex + 1 < CLIPS.length ? 'SLEDEĆI FILM' : 'PRESKOČI U IGRU') : 'POKRENI FILMSKI UVOD'}
+              {started ? (getNextCinematicClipIndex(clipIndex, CLIPS.length) !== null ? 'SLEDEĆI FILM' : 'PRESKOČI U IGRU') : 'POKRENI FILMSKI UVOD'}
             </button>
             <button
               type="button"
