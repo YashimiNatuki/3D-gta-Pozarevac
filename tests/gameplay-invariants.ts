@@ -107,9 +107,44 @@ assert.ok(decayShake(1, 0.016) < 1, 'camera shake should decay');
 assert.equal(mapLiveWeatherToState({ weather: [{ main: 'Thunderstorm' }] }), 'Cyber-Storm');
 assert.equal(mapLiveWeatherToState({ weather: [{ main: 'Rain' }] }), 'Rain');
 assert.equal(normalizeLiveWeather({ weather: [{ main: 'Clear', description: 'clear sky' }], main: { temp: 17, humidity: 65 } }).temperatureC, 17);
-assert.match(buildNpcSystemPrompt({ name: 'Sale', inGameTime: 'noć', weather: 'Rain', location: 'Tabačke čaršije' }), /najviše 2 rečenice/);
+assert.match(buildNpcSystemPrompt({ name: 'Sale', inGameTime: 'noć', weather: 'Rain', location: 'Tabačke čaršije' }), /jednu ili dve kratke rečenice/);
+const layeredNpcPrompt = buildNpcSystemPrompt({
+  name: 'Sale Ortak',
+  inGameTime: 'noć',
+  weather: 'Rain',
+  location: 'Tabačka Čaršija',
+  mood: 'nervozan',
+  personality: {
+    archetype: 'loyal_friend',
+    dominantTraits: ['duhovit', 'oprezan'],
+    values: ['ekipa', 'pošten dogovor'],
+    contradiction: 'želi da zaštiti druga, ali neće da pokaže strah',
+    relationship: 'dugogodišnji prijatelj',
+    trust: 72,
+    respect: 64,
+    fear: 12,
+    loyalty: 91,
+    memory: ['Igrač je vratio dug', 'Zajedno su pobegli od potere'],
+    currentGoal: 'proveri da li igrač govori istinu',
+    speakingStyle: 'kratko, prirodno, povremeno požarevački',
+  },
+});
+assert.match(layeredNpcPrompt, /UNUTRAŠNJA DIHOTOMIJA/);
+assert.match(layeredNpcPrompt, /poverenje=72/);
+assert.match(layeredNpcPrompt, /Zajedno su pobegli od potere/);
+assert.match(layeredNpcPrompt, /isključivo jedan validan JSON objekat/);
+assert.match(layeredNpcPrompt, /CrossArms, PointFinger, BackAway, Laugh/);
+assert.match(buildNpcSystemPrompt({
+  name: 'X',
+  inGameTime: 'day',
+  weather: 'Clear',
+  location: 'Trg',
+  personality: { trust: 500, memory: ['  zapis\\nsa kontrolnim znakom  '] },
+}), /poverenje=100/);
 assert.deepEqual(parseNpcActionPayload('{"dialogue":"Stani, brate.","Action":"PointFinger"}'), { dialogue: 'Stani, brate.', action: 'PointFinger' });
 assert.equal(parseNpcActionPayload('{"dialogue":"x","Action":"ExecuteCode"}'), null);
+assert.equal(parseNpcActionPayload('{"dialogue":"","Action":"Laugh"}'), null);
+assert.equal(parseNpcActionPayload(JSON.stringify({ dialogue: 'x'.repeat(401), Action: 'Laugh' })), null);
 assert.match(TEXTURE_PROMPTS.wornNeonAsphalt, /tileable/i);
 assert.deepEqual(getModularBuildingBounds({ width: 8, height: 10, depth: 6, bodyColor: 0x334155 }), { width: 8, height: 11.92, depth: 6 });
 assert.equal(shouldAutoActivatePoi(VASARISTE_POI_ID, undefined), true);
