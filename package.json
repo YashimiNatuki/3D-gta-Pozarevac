@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "npm run dev-app",
+    "dev-app": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
