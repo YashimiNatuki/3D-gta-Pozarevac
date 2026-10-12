@@ -11,6 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:invariants": "tsx tests/gameplay-invariants.ts",
+    "test:npc-relations": "tsx tests/npc-relationship-invariants.ts",
     "dev-app": "vite --port=3000 --host=0.0.0.0"
   },
   "dependencies": {
