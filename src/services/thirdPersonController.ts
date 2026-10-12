@@ -93,6 +93,8 @@ export class ThirdPersonController {
   private boundOnMouseUp: (e: MouseEvent) => void;
   private boundOnWheel: (e: WheelEvent) => void;
   private boundOnContextMenu: (e: MouseEvent) => void;
+  private boundOnWindowBlur: () => void;
+  private boundOnVisibilityChange: () => void;
 
   constructor(opts: ControllerOptions) {
     this.camera = opts.camera;
@@ -147,12 +149,18 @@ export class ThirdPersonController {
     this.boundOnMouseUp = this.onMouseUp.bind(this);
     this.boundOnWheel = this.onWheel.bind(this);
     this.boundOnContextMenu = (e: MouseEvent) => e.preventDefault();
+    this.boundOnWindowBlur = this.resetInputState.bind(this);
+    this.boundOnVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') this.resetInputState();
+    };
 
     window.addEventListener('keydown', this.boundOnKeyDown);
     window.addEventListener('keyup', this.boundOnKeyUp);
     this.domElement.addEventListener('mousedown', this.boundOnMouseDown);
     window.addEventListener('mousemove', this.boundOnMouseMove);
     window.addEventListener('mouseup', this.boundOnMouseUp);
+    window.addEventListener('blur', this.boundOnWindowBlur);
+    document.addEventListener('visibilitychange', this.boundOnVisibilityChange);
     this.domElement.addEventListener('wheel', this.boundOnWheel, { passive: false });
     this.domElement.addEventListener('contextmenu', this.boundOnContextMenu);
   }
@@ -179,14 +187,23 @@ export class ThirdPersonController {
   }
 
   private onKeyDown(e: KeyboardEvent) {
-    // Avoid capturing inputs if user is typing in chat inputs or forms
-    const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-    if (targetTag === 'input' || targetTag === 'textarea') return;
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    const isTypingTarget = !!target && (
+      target.isContentEditable ||
+      !!target.closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"], [role="dialog"], dialog')
+    );
+    if (isTypingTarget) return;
 
     const key = e.key.toLowerCase();
+    const isGameControl = [
+      'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift', ' '
+    ].includes(key) || e.code === 'Space';
+
+    // Prevent browser scrolling while movement controls are being used.
+    if (isGameControl) e.preventDefault();
     this.keys[key] = true;
 
-    // Jump handling
+    // Jump handling. The code check also covers keyboard layouts where Space's key value differs.
     if (e.code === 'Space' && !this.isJumping) {
       this.isJumping = true;
       this.jumpVelocity = this.jumpPower;
@@ -195,8 +212,14 @@ export class ThirdPersonController {
   }
 
   private onKeyUp(e: KeyboardEvent) {
-    const key = e.key.toLowerCase();
-    this.keys[key] = false;
+    // Always clear released keys, even if focus moved to an input after keydown.
+    this.keys[e.key.toLowerCase()] = false;
+  }
+
+  private resetInputState() {
+    // Keyup can be lost when the tab loses focus; never leave the player walking or sprinting.
+    this.keys = {};
+    this.isOrbiting = false;
   }
 
   private onMouseDown(e: MouseEvent) {
@@ -444,6 +467,8 @@ export class ThirdPersonController {
     this.domElement.removeEventListener('mousedown', this.boundOnMouseDown);
     window.removeEventListener('mousemove', this.boundOnMouseMove);
     window.removeEventListener('mouseup', this.boundOnMouseUp);
+    window.removeEventListener('blur', this.boundOnWindowBlur);
+    document.removeEventListener('visibilitychange', this.boundOnVisibilityChange);
     this.domElement.removeEventListener('wheel', this.boundOnWheel);
     this.domElement.removeEventListener('contextmenu', this.boundOnContextMenu);
   }
