@@ -31,6 +31,7 @@ export interface NpcRelationshipEngineOptions { memoryLimit?: number }
 const SCORE_MIN = 0;
 const SCORE_MAX = 100;
 const DEFAULT_SCORE = 50;
+const EVENT_ID_CACHE_LIMIT = 512;
 const EVENT_DELTAS: Record<NpcRelationshipEventType, NpcRelationshipScores> = {
   kindness: { trust: 5, respect: 1, fear: -1, loyalty: 2 },
   completed_favor: { trust: 9, respect: 5, fear: -1, loyalty: 8 },
@@ -113,6 +114,10 @@ export class NpcRelationshipEngine {
       loyalty: clampScore(state.scores.loyalty + delta.loyalty),
     };
     state.seenEventIds.add(eventId);
+    if (state.seenEventIds.size > EVENT_ID_CACHE_LIMIT) {
+      const oldestEventId = state.seenEventIds.values().next().value;
+      if (oldestEventId) state.seenEventIds.delete(oldestEventId);
+    }
     state.lastEventAt = state.lastEventAt === null ? event.occurredAt : Math.max(state.lastEventAt, event.occurredAt);
     state.memories.push({
       eventId, type: event.type, occurredAt: event.occurredAt, note: normalizeText(event.note, 160),
