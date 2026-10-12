@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:invariants": "tsx tests/gameplay-invariants.ts",
+    "test:invariants": "tsx tests/gameplay-invariants.ts && npm run test:npc-relations",
+    "test:npc-relations": "tsx tests/npc-relationship-invariants.ts",
     "dev-app": "vite --port=3000 --host=0.0.0.0"
   },
   "dependencies": {
