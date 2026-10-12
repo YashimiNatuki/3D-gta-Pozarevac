@@ -31,5 +31,8 @@ jobs:
       - name: Type-check
         run: npm run lint
 
-      - name: Build Vite application
+      - name: Gameplay invariant tests
+        run: npm run test:invariants --if-present
+
+      - name: Production build
         run: npm run build
