@@ -100,14 +100,15 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-black text-xs sm:text-sm tracking-wider text-white">
-                AiChatBratina
+                3D-VelikaKradjaTockova
               </span>
               <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-950 border border-red-500 text-red-400 font-black">
-                v10.0 XP OMEGA
+                Po-Bl👁️k-C
               </span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="text-emerald-400 font-bold">Konglomerat Preduzeće™</span>
+              <span className="text-emerald-400 font-bold">presentie®️</span>
+              <span>• Konglomerat Preduzeće™</span>
               <span>• Full Power</span>
             </div>
           </div>
