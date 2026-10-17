@@ -1,3 +1,5 @@
+> **Repo audit (17.10.2026):** [docs/REPO_AUDIT.md](docs/REPO_AUDIT.md) — README navodi test skriptu koja nije prisutna u package.json; otvoreni PR-ovi nisu spojeni. Izveštaj je statički i build nije pokrenut.
+
 # 3D-VelikaKradjaTockova Po-Bl👁️k-C presentie®
 
 **Radni naziv igre:** 3D-VelikaKradjaTockova Po-Bl👁️k-C presentie®️  
