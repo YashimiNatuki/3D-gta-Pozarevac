@@ -37,5 +37,17 @@ jobs:
       - name: Gameplay invariant tests
         run: npm run test:invariants --if-present
 
+      - name: Set up Java 21 for Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Firebase CLI for emulator tests
+        run: npm install --global firebase-tools@15.32.1
+
+      - name: Firestore emulator read/write/delete integration
+        run: npm run test:firestore:emulator
+
       - name: Production build
         run: npm run build
