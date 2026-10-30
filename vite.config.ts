@@ -243,7 +243,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), geminiChatApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {
