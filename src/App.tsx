@@ -2,10 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ThreeCanvas } from './components/ThreeCanvas';
 import { HudOverlay } from './components/HudOverlay';
 import { DriveSyncModal, GameSaveData } from './components/DriveSyncModal';
-import { AiChatDrawer } from './components/AiChatDrawer';
 import { GraveyardVaultModal } from './components/GraveyardVaultModal';
 import { EntityItem, initialVaultEntities, SystemEngine } from './services/systemEngine';
-import { VeoStudioModal } from './components/VeoStudioModal';
 import { GameIntroVideoModal } from './components/GameIntroVideoModal';
 import { DailyLoginBonusModal } from './components/DailyLoginBonusModal';
 import { GtaPožarevacHud } from './components/GtaPožarevacHud';
@@ -35,10 +33,6 @@ import {
   INITIAL_TURF_ZONES,
 } from './services/dynamicMissionEngine';
 import { TurfWarModal } from './components/TurfWarModal';
-import { GoogleDocsModal } from './components/GoogleDocsModal';
-import { GoogleMapsModal } from './components/GoogleMapsModal';
-import { GooglePickerModal } from './components/GooglePickerModal';
-import { MasterPlanModal } from './components/MasterPlanModal';
 import { PickedGoogleFile } from './services/googlePicker';
 import { savePlayerProgressToFirestore, loadPlayerProgressFromFirestore } from './services/firestoreDb';
 import { CctvOverlay } from './components/CctvOverlay';
@@ -57,6 +51,26 @@ import {
   TimeOfDay,
   StreetEconomyEngine,
 } from './services/streetEconomy';
+
+// Large optional panels are loaded only when the user opens them.
+const AiChatDrawer = React.lazy(() =>
+  import('./components/AiChatDrawer').then((module) => ({ default: module.AiChatDrawer }))
+);
+const VeoStudioModal = React.lazy(() =>
+  import('./components/VeoStudioModal').then((module) => ({ default: module.VeoStudioModal }))
+);
+const GoogleDocsModal = React.lazy(() =>
+  import('./components/GoogleDocsModal').then((module) => ({ default: module.GoogleDocsModal }))
+);
+const GoogleMapsModal = React.lazy(() =>
+  import('./components/GoogleMapsModal').then((module) => ({ default: module.GoogleMapsModal }))
+);
+const GooglePickerModal = React.lazy(() =>
+  import('./components/GooglePickerModal').then((module) => ({ default: module.GooglePickerModal }))
+);
+const MasterPlanModal = React.lazy(() =>
+  import('./components/MasterPlanModal').then((module) => ({ default: module.MasterPlanModal }))
+);
 
 /**
  * Initialization hook in App.tsx that checks for a stored cinematic intro flag
@@ -733,11 +747,15 @@ export function App() {
       />
 
       {/* Multi-turn Chatbot (Search, Maps & POI Quest Dialogue) Drawer */}
-      <AiChatDrawer
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        activePoiDialogue={activePoiDialogue}
-      />
+      {isChatOpen && (
+        <React.Suspense fallback={null}>
+          <AiChatDrawer
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            activePoiDialogue={activePoiDialogue}
+          />
+        </React.Suspense>
+      )}
 
       {/* Y!App Graveyard & Genetic Vault Inspector Modal */}
       <GraveyardVaultModal
@@ -748,11 +766,15 @@ export function App() {
       />
 
       {/* Veo 3 Video Studio Modal */}
-      <VeoStudioModal
-        isOpen={isVeoOpen}
-        onClose={() => setIsVeoOpen(false)}
-        onSetAsIntroVideo={handleSetAsIntroVideo}
-      />
+      {isVeoOpen && (
+        <React.Suspense fallback={null}>
+          <VeoStudioModal
+            isOpen={isVeoOpen}
+            onClose={() => setIsVeoOpen(false)}
+            onSetAsIntroVideo={handleSetAsIntroVideo}
+          />
+        </React.Suspense>
+      )}
 
       {/* Zvanična Uvodna Špica Igrice (Veo 3 AI Video / Trailer) Modal */}
       <GameIntroVideoModal
@@ -835,38 +857,54 @@ export function App() {
       />
 
       {/* Google Docs Izveštaj & Hronika Modal */}
-      <GoogleDocsModal
-        isOpen={isDocsOpen}
-        onClose={() => setIsDocsOpen(false)}
-        stats={characterStats}
-        turfZones={turfZones}
-        userEmail={currentUser?.email}
-      />
+      {isDocsOpen && (
+        <React.Suspense fallback={null}>
+          <GoogleDocsModal
+            isOpen={isDocsOpen}
+            onClose={() => setIsDocsOpen(false)}
+            stats={characterStats}
+            turfZones={turfZones}
+            userEmail={currentUser?.email}
+          />
+        </React.Suspense>
+      )}
 
       {/* Google Maps GPS Požarevac Satelit & Znamenitosti Modal */}
-      <GoogleMapsModal
-        isOpen={isMapsOpen}
-        onClose={() => setIsMapsOpen(false)}
-        playerPos={playerPos}
-        onTeleportToPoi={(poi) => {
-          setPlayerPos({ x: poi.coords.x, z: poi.coords.z, heading: playerPos.heading });
-        }}
-      />
+      {isMapsOpen && (
+        <React.Suspense fallback={null}>
+          <GoogleMapsModal
+            isOpen={isMapsOpen}
+            onClose={() => setIsMapsOpen(false)}
+            playerPos={playerPos}
+            onTeleportToPoi={(poi) => {
+              setPlayerPos({ x: poi.coords.x, z: poi.coords.z, heading: playerPos.heading });
+            }}
+          />
+        </React.Suspense>
+      )}
 
       {/* Google Picker v10.0 Modal */}
-      <GooglePickerModal
-        isOpen={isPickerOpen}
-        onClose={() => setIsPickerOpen(false)}
-        onFileSelected={(file) => {
-          console.log('[Google Picker File Selected]', file);
-        }}
-      />
+      {isPickerOpen && (
+        <React.Suspense fallback={null}>
+          <GooglePickerModal
+            isOpen={isPickerOpen}
+            onClose={() => setIsPickerOpen(false)}
+            onFileSelected={(file) => {
+              console.log('[Google Picker File Selected]', file);
+            }}
+          />
+        </React.Suspense>
+      )}
 
       {/* XP Master Codex v10.0 Modal (10 Master Algoritama) */}
-      <MasterPlanModal
-        isOpen={isMasterPlanOpen}
-        onClose={() => setIsMasterPlanOpen(false)}
-      />
+      {isMasterPlanOpen && (
+        <React.Suspense fallback={null}>
+          <MasterPlanModal
+            isOpen={isMasterPlanOpen}
+            onClose={() => setIsMasterPlanOpen(false)}
+          />
+        </React.Suspense>
+      )}
 
       {/* CCTV Hacker Surveillance Overlay */}
       <CctvOverlay
